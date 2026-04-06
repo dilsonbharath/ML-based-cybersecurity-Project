@@ -9,7 +9,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 @router.get("/nurse")
-def nurse_snapshot(user=Depends(require_roles("Doctor", "Nurse", "Administrator"))):
+def nurse_snapshot(user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk"))):
     today = date.today().isoformat()
     with get_connection() as conn:
         rows = conn.execute(

@@ -29,7 +29,7 @@ def _patient_exists(conn, patient_id: int) -> bool:
 @router.get("/{patient_id}/record")
 def get_patient_record(
     patient_id: int,
-    user=Depends(require_roles("Doctor", "Nurse", "Administrator")),
+    user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk")),
 ):
     with get_connection() as conn:
         patient = conn.execute(
@@ -232,7 +232,7 @@ def get_patient_record(
 def update_patient_record(
     patient_id: int,
     payload: ClinicalRecordUpdate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     with get_connection() as conn:
         if not _patient_exists(conn, patient_id):
@@ -304,7 +304,7 @@ def update_patient_record(
 def add_vitals(
     patient_id: int,
     payload: VitalsCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     with get_connection() as conn:
         if not _patient_exists(conn, patient_id):
@@ -341,7 +341,7 @@ def add_vitals(
 def create_lab_order(
     patient_id: int,
     payload: LabOrderCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     with get_connection() as conn:
         if not _patient_exists(conn, patient_id):
@@ -369,7 +369,7 @@ def create_lab_order(
 def add_lab_result(
     lab_order_id: int,
     payload: LabResultCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     with get_connection() as conn:
         order = conn.execute(
@@ -403,7 +403,7 @@ def add_lab_result(
 def create_imaging_order(
     patient_id: int,
     payload: ImagingOrderCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     with get_connection() as conn:
         if not _patient_exists(conn, patient_id):
@@ -431,7 +431,7 @@ def create_imaging_order(
 def add_imaging_report(
     imaging_order_id: int,
     payload: ImagingReportCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     with get_connection() as conn:
         order = conn.execute(
@@ -465,7 +465,7 @@ def add_imaging_report(
 def add_charge(
     patient_id: int,
     payload: ChargeCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     with get_connection() as conn:
         if not _patient_exists(conn, patient_id):

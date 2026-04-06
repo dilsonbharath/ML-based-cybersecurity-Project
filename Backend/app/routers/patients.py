@@ -1,15 +1,13 @@
-import sqlite3
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from ..database import get_connection, log_operation, to_dict, to_list
+from ..database import IntegrityError, get_connection, log_operation, to_dict, to_list
 from ..deps import require_roles
 from ..schemas import PatientCreate, PatientUpdate
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
 
-def _fetch_patient(conn: sqlite3.Connection, patient_id: int):
+def _fetch_patient(conn, patient_id: int):
     return conn.execute(
         """
         SELECT
@@ -31,7 +29,7 @@ def _fetch_patient(conn: sqlite3.Connection, patient_id: int):
 @router.get("")
 def list_patients(
     search: str | None = Query(default=None),
-    user=Depends(require_roles("Doctor", "Nurse", "Administrator")),
+    user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk")),
 ):
     with get_connection() as conn:
         if search:
@@ -75,7 +73,7 @@ def list_patients(
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_patient(
     payload: PatientCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     assigned_doctor_id = payload.assigned_doctor_id
     if user["role"] == "Doctor" and assigned_doctor_id is None:
@@ -108,7 +106,7 @@ def create_patient(
                     assigned_doctor_id,
                 ),
             )
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="UHID already exists") from exc
 
         patient_id = int(cursor.lastrowid)
@@ -131,7 +129,7 @@ def create_patient(
 def update_patient(
     patient_id: int,
     payload: PatientUpdate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     updates: list[str] = []
     values: list[object] = []
@@ -179,7 +177,7 @@ def update_patient(
                 f"UPDATE patients SET {', '.join(updates)} WHERE id = ?",
                 tuple(values),
             )
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="UHID already exists") from exc
 
         log_operation(

@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "npm run test:e2e:all",
+    "test:e2e:all": "npm run test:e2e:frontend && npm run test:e2e:backend",
+    "test:e2e:frontend": "playwright test --config=playwright.config.js",
+    "test:e2e:backend": "playwright test --config=playwright.backend.config.js",
+    "test:e2e:ui": "playwright test --config=playwright.config.js --ui"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -14,6 +19,7 @@
     "react-router-dom": "^6.30.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.11"
   }

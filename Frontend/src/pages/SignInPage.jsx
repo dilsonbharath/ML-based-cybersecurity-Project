@@ -1,6 +1,6 @@
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import AuthForm from "../components/auth/AuthForm";
-import { loginUser } from "../services/hmisService";
+import { loginUser } from "../services/ehrService";
 
 export default function SignInPage({ user, onAuthSuccess }) {
   const navigate = useNavigate();

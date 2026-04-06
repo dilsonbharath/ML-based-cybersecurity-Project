@@ -9,8 +9,46 @@ from ..schemas import AppointmentCreate, AppointmentStatusUpdate
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
 
+@router.get("")
+def list_appointments(
+    user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk"))
+):
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              a.id,
+              a.patient_id,
+              a.doctor_id,
+              a.appointment_date,
+              a.appointment_time,
+              a.status,
+              p.full_name AS patient_name,
+              p.uhid AS patient_uhid
+            FROM appointments a
+            JOIN patients p ON p.id = a.patient_id
+            ORDER BY a.appointment_date DESC, a.appointment_time
+            """
+        ).fetchall()
+
+    data = []
+    for row in rows:
+        payload = to_dict(row)
+        payload["patient"] = {
+            "id": payload["patient_id"],
+            "fullName": payload.pop("patient_name"),
+            "uhid": payload.pop("patient_uhid"),
+        }
+        payload["appointmentTime"] = payload.pop("appointment_time")
+        payload["appointmentDate"] = payload.pop("appointment_date")
+        data.append(payload)
+    return data
+
+
 @router.get("/today")
-def todays_appointments(user=Depends(require_roles("Doctor", "Nurse", "Administrator"))):
+def todays_appointments(
+    user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk"))
+):
     today = date.today().isoformat()
     with get_connection() as conn:
         if user["role"] == "Doctor":
@@ -69,7 +107,7 @@ def todays_appointments(user=Depends(require_roles("Doctor", "Nurse", "Administr
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_appointment(
     payload: AppointmentCreate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
     doctor_id = payload.doctor_id if payload.doctor_id is not None else user["id"]
     if user["role"] == "Doctor":
@@ -112,7 +150,7 @@ def create_appointment(
 def update_appointment_status(
     appointment_id: int,
     payload: AppointmentStatusUpdate,
-    user=Depends(require_roles("Doctor", "Nurse")),
+    user=Depends(require_roles("Doctor")),
 ):
     with get_connection() as conn:
         exists = conn.execute("SELECT id FROM appointments WHERE id = ?", (appointment_id,)).fetchone()

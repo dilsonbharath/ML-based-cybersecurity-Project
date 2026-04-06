@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..database import get_connection, log_operation, to_dict
@@ -6,11 +8,28 @@ from ..schemas import AuthResponse, SignInRequest, SignUpRequest
 from ..security import create_token, hash_password, token_expiry, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+PASSWORD_POLICY = re.compile(r"^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$")
+USERNAME_POLICY = re.compile(r"^[a-z0-9._]+$")
 
 
 @router.post("/signup")
 def signup(payload: SignUpRequest):
     email = payload.email.lower().strip()
+    username = payload.username.lower().strip()
+    expected_email = f"{username}.{payload.role.lower()}@ehr.in"
+
+    if not USERNAME_POLICY.fullmatch(username):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid username format")
+    if email != expected_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username must follow username.role@ehr.in",
+        )
+    if not PASSWORD_POLICY.fullmatch(payload.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be 12+ chars with uppercase, number, and special character",
+        )
 
     with get_connection() as conn:
         existing = conn.execute(

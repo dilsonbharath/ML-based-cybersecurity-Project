@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-RoleType = Literal["Doctor", "Nurse", "Administrator"]
+RoleType = Literal["Doctor", "Nurse", "Administrator", "registration_desk"]
 GenderType = Literal["Male", "Female", "Other"]
 StatusType = Literal["Scheduled", "Checked In", "In Consultation", "Completed"]
 
@@ -16,8 +16,10 @@ class UserOut(BaseModel):
 
 class SignUpRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
+    age: int = Field(ge=18, le=100)
+    username: str = Field(min_length=3, max_length=64)
     email: str = Field(min_length=6, max_length=120)
-    password: str = Field(min_length=6, max_length=120)
+    password: str = Field(min_length=12, max_length=120)
     role: RoleType
 
 

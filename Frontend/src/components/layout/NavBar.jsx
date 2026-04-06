@@ -4,11 +4,12 @@ export default function NavBar({ user, onLogout }) {
   return (
     <header className="top-nav">
       <Link className="brand" to="/">
-        Kranium HMIS
+        EHR Electronic Health Records
       </Link>
       <nav className="menu">
         {!user && (
           <>
+            <Link to="/">Home</Link>
             <Link to="/signin">Sign In</Link>
             <Link className="menu-cta" to="/signup">
               Sign Up

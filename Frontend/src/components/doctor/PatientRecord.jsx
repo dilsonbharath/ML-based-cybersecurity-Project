@@ -35,53 +35,56 @@ export default function PatientRecord({ appointment, patientRecord, loading }) {
 
       <article className="record-section">
         <h4>1. Patient Demographics & Identification (Read-Only)</h4>
-        <div className="record-grid">
-          <p>
-            <span>Name</span>
-            {patient.fullName}
-          </p>
-          <p>
-            <span>Age</span>
-            {patient.age}
-          </p>
-          <p>
-            <span>Gender</span>
-            {patient.gender}
-          </p>
-          <p>
-            <span>UHID</span>
-            {patient.uhid}
-          </p>
-          <p>
-            <span>Doctor Assigned</span>
-            {patient.doctorAssigned}
-          </p>
+        <div className="table-wrap">
+          <table className="data-table mini-table">
+            <tbody>
+              <tr>
+                <th>Name</th>
+                <td>{patient.fullName}</td>
+                <th>Age</th>
+                <td>{patient.age}</td>
+              </tr>
+              <tr>
+                <th>Gender</th>
+                <td>{patient.gender}</td>
+                <th>UHID</th>
+                <td>{patient.uhid}</td>
+              </tr>
+              <tr>
+                <th>Doctor Assigned</th>
+                <td colSpan="3">{patient.doctorAssigned}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </article>
 
       <article className="record-section">
         <h4>2. Clinical History & Current Issues (Read & Write)</h4>
-        <p>
-          <span className="section-key">Chief Complaint:</span> {safeRecord.chiefComplaint}
-        </p>
-        <p className="section-key">Past Medical History:</p>
-        <ul>
-          {safeRecord.pastMedicalHistory.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-        <p className="section-key">Social/Family History:</p>
-        <ul>
-          {safeRecord.socialFamilyHistory.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+        <div className="table-wrap">
+          <table className="data-table mini-table">
+            <tbody>
+              <tr>
+                <th>Chief Complaint</th>
+                <td>{safeRecord.chiefComplaint || "-"}</td>
+              </tr>
+              <tr>
+                <th>Past Medical History</th>
+                <td>{safeRecord.pastMedicalHistory.length ? safeRecord.pastMedicalHistory.join(", ") : "-"}</td>
+              </tr>
+              <tr>
+                <th>Social / Family History</th>
+                <td>{safeRecord.socialFamilyHistory.length ? safeRecord.socialFamilyHistory.join(", ") : "-"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </article>
 
       <article className="record-section">
         <h4>3. Vitals & Physical Examination (Read & Write)</h4>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table mini-table">
             <thead>
               <tr>
                 <th>Recorded At</th>
@@ -106,19 +109,23 @@ export default function PatientRecord({ appointment, patientRecord, loading }) {
             </tbody>
           </table>
         </div>
-        <p className="section-key">Physical Findings:</p>
-        <ul>
-          {safeRecord.physicalFindings.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+        <div className="table-wrap">
+          <table className="data-table mini-table">
+            <tbody>
+              <tr>
+                <th>Physical Findings</th>
+                <td>{safeRecord.physicalFindings.length ? safeRecord.physicalFindings.join(", ") : "-"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </article>
 
       <article className="record-section">
         <h4>4. Investigations & Lab Work (Read & Write Orders)</h4>
         <p className="section-key">Blood Test Orders:</p>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table mini-table">
             <thead>
               <tr>
                 <th>Order ID</th>
@@ -147,7 +154,7 @@ export default function PatientRecord({ appointment, patientRecord, loading }) {
 
         <p className="section-key">Blood Test Results:</p>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table mini-table">
             <thead>
               <tr>
                 <th>Test</th>
@@ -178,7 +185,7 @@ export default function PatientRecord({ appointment, patientRecord, loading }) {
 
         <p className="section-key">Imaging:</p>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table mini-table">
             <thead>
               <tr>
                 <th>Order ID</th>
@@ -206,19 +213,21 @@ export default function PatientRecord({ appointment, patientRecord, loading }) {
 
       <article className="record-section">
         <h4>5. Financials & Billing (Read-Only/Limited)</h4>
-        <div className="record-grid">
-          <p>
-            <span>Billing Status</span>
-            {safeRecord.billing.billingStatus}
-          </p>
-          <p>
-            <span>Insurance Approval</span>
-            {safeRecord.billing.insuranceApproval}
-          </p>
+        <div className="table-wrap">
+          <table className="data-table mini-table">
+            <tbody>
+              <tr>
+                <th>Billing Status</th>
+                <td>{safeRecord.billing.billingStatus || "-"}</td>
+                <th>Insurance Approval</th>
+                <td>{safeRecord.billing.insuranceApproval || "-"}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
         <p className="section-key">Charge Capture:</p>
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table mini-table">
             <thead>
               <tr>
                 <th>Item</th>

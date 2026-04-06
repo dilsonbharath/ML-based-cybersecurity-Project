@@ -1,6 +1,6 @@
 import { Navigate, useNavigate } from "react-router-dom";
 import AuthForm from "../components/auth/AuthForm";
-import { getRoleOptions, registerUser } from "../services/hmisService";
+import { getRoleOptions, registerUser } from "../services/ehrService";
 
 export default function SignUpPage({ user }) {
   const navigate = useNavigate();
@@ -23,7 +23,7 @@ export default function SignUpPage({ user }) {
   }
 
   return (
-    <main className="page-shell">
+    <main className="page-shell signup-page">
       <AuthForm mode="signup" onSubmit={handleSignUp} roles={roles} />
     </main>
   );
