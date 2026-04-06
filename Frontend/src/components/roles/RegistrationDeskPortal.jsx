@@ -3,6 +3,7 @@ import {
   createAppointment,
   createPatient,
   getDoctors,
+  getNurses,
   getNurseSnapshot,
   getPatients,
   getTodaysAppointments,
@@ -31,7 +32,6 @@ function nextUhidFromRows(rows) {
 }
 
 const VITALS_TASKS = ["Blood", "Sugar", "Pressure", "Heart Rate", "Weight", "Height"];
-const NURSE_OPTIONS = ["Nurse Priya Menon", "Nurse Kavya Raj", "Nurse Harini S", "Nurse Deepa N"];
 
 export default function RegistrationDeskPortal({ user }) {
   const [snapshot, setSnapshot] = useState({
@@ -39,6 +39,7 @@ export default function RegistrationDeskPortal({ user }) {
     pendingTasks: 0
   });
   const [doctors, setDoctors] = useState([]);
+  const [nurses, setNurses] = useState([]);
   const [allPatients, setAllPatients] = useState([]);
   const [recentPatients, setRecentPatients] = useState([]);
   const [todayAppointments, setTodayAppointments] = useState([]);
@@ -55,7 +56,7 @@ export default function RegistrationDeskPortal({ user }) {
     age: "",
     gender: "Male",
     problem: "",
-    assignedNurse: NURSE_OPTIONS[0],
+    assignedNurse: "",
     assignedDoctorId: "",
     appointmentDate: todayISO(),
     appointmentTime: "09:00"
@@ -93,6 +94,27 @@ export default function RegistrationDeskPortal({ user }) {
       }
     }
 
+    async function loadNurses() {
+      try {
+        const rows = await getNurses();
+        if (!stopped) {
+          setNurses(rows);
+          setForm((prev) => {
+            const nurseNames = rows.map((row) => row.full_name);
+            const nextAssigned =
+              prev.assignedNurse && nurseNames.includes(prev.assignedNurse)
+                ? prev.assignedNurse
+                : nurseNames[0] || "";
+            return { ...prev, assignedNurse: nextAssigned };
+          });
+        }
+      } catch {
+        if (!stopped) {
+          setNurses([]);
+        }
+      }
+    }
+
     async function loadRecentPatients() {
       try {
         const rows = await getPatients("");
@@ -124,10 +146,11 @@ export default function RegistrationDeskPortal({ user }) {
 
     loadSnapshot();
     loadDoctors();
+    loadNurses();
     loadRecentPatients();
     loadTodaysAppointments();
 
-    const timer = setInterval(loadSnapshot, 5000);
+    const timer = setInterval(loadSnapshot, 12000);
     return () => {
       stopped = true;
       clearInterval(timer);
@@ -173,6 +196,11 @@ export default function RegistrationDeskPortal({ user }) {
 
     if (!form.assignedDoctorId) {
       setError("Please assign a doctor.");
+      return;
+    }
+
+    if (!form.assignedNurse) {
+      setError("Please assign a nurse.");
       return;
     }
 
@@ -233,7 +261,7 @@ export default function RegistrationDeskPortal({ user }) {
         age: "",
         gender: "Male",
         problem: "",
-        assignedNurse: form.assignedNurse,
+        assignedNurse: form.assignedNurse || nurses[0]?.full_name || "",
         assignedDoctorId: form.assignedDoctorId,
         appointmentDate: todayISO(),
         appointmentTime: "09:00"
@@ -350,9 +378,10 @@ export default function RegistrationDeskPortal({ user }) {
                 required
                 value={form.assignedNurse}
               >
-                {NURSE_OPTIONS.map((nurse) => (
-                  <option key={nurse} value={nurse}>
-                    {nurse}
+                {!nurses.length && <option value="">No active nurses found</option>}
+                {nurses.map((nurse) => (
+                  <option key={nurse.id} value={nurse.full_name}>
+                    {nurse.full_name}
                   </option>
                 ))}
               </select>

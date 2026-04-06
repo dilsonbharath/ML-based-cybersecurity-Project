@@ -3,6 +3,7 @@ import {
   addVitals,
   getAppointments,
   getDoctors,
+  getNurses,
   getPatientRecord,
   getPatients,
   getTodaysAppointments,
@@ -53,6 +54,7 @@ export default function PatientOperationsPanel({ user }) {
   const isDoctorLikePortal = isDoctorPortal || isNursePortal;
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const [nurses, setNurses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPatientId, setSelectedPatientId] = useState(null);
@@ -70,6 +72,9 @@ export default function PatientOperationsPanel({ user }) {
   const [todayPatientIds, setTodayPatientIds] = useState([]);
   const [showPatientRecordsTable, setShowPatientRecordsTable] = useState(true);
   const [doctorEditMode, setDoctorEditMode] = useState(false);
+  const [medcareAssignMode, setMedcareAssignMode] = useState(false);
+  const [medcareAssignNurseId, setMedcareAssignNurseId] = useState("");
+  const [savingMedcare, setSavingMedcare] = useState(false);
   const [savingDoctorRecord, setSavingDoctorRecord] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -129,6 +134,7 @@ export default function PatientOperationsPanel({ user }) {
     healthIssues: "",
     medicalReports: "",
     currentMedicines: "",
+    medcareNurseId: "",
     status: "Scheduled"
   });
 
@@ -137,12 +143,17 @@ export default function PatientOperationsPanel({ user }) {
     async function load() {
       setLoading(true);
       try {
-        const [patientRows, doctorRows] = await Promise.all([getPatients(search), getDoctors()]);
+        const [patientRows, doctorRows, nurseRows] = await Promise.all([
+          getPatients(search),
+          getDoctors(),
+          getNurses()
+        ]);
         if (ignore) {
           return;
         }
         setPatients(patientRows);
         setDoctors(doctorRows);
+        setNurses(nurseRows);
         if (!selectedPatientId && patientRows.length) {
           setSelectedPatientId(patientRows[0].id);
         }
@@ -185,7 +196,7 @@ export default function PatientOperationsPanel({ user }) {
     }
 
     loadTodaysPatients();
-    const timer = setInterval(loadTodaysPatients, 5000);
+    const timer = setInterval(loadTodaysPatients, 12000);
     return () => {
       ignore = true;
       clearInterval(timer);
@@ -282,6 +293,7 @@ export default function PatientOperationsPanel({ user }) {
       healthIssues: extractPrefixedMultiline(selectedPatientRecord?.socialFamilyHistory, "Health issue:"),
       medicalReports: extractPrefixedMultiline(selectedPatientRecord?.socialFamilyHistory, "Report:"),
       currentMedicines: extractPrefixedMultiline(selectedPatientRecord?.socialFamilyHistory, "Medicine:"),
+      medcareNurseId: String(selectedPatient?.medcare_nurse_id || ""),
       status: selectedAnyAppointment.status || "Scheduled"
     });
   }, [
@@ -300,8 +312,13 @@ export default function PatientOperationsPanel({ user }) {
   useEffect(() => {
     if (isDoctorLikePortal) {
       setDoctorEditMode(false);
+      setMedcareAssignMode(false);
     }
   }, [isDoctorLikePortal, selectedAppointmentId, selectedPatientId]);
+
+  useEffect(() => {
+    setMedcareAssignNurseId(String(selectedPatient?.medcare_nurse_id || ""));
+  }, [selectedPatient?.id, selectedPatient?.medcare_nurse_id]);
 
   useEffect(() => {
     if (isDoctorLikePortal && viewMode) {
@@ -628,13 +645,23 @@ export default function PatientOperationsPanel({ user }) {
         )
       );
 
+      const medcareNurseIdValue = toNumber(doctorEditForm.medcareNurseId);
+      const medcareChanged = Boolean(
+        isDoctorLikePortal &&
+        Number(selectedPatient?.medcare_nurse_id || 0) !== Number(medcareNurseIdValue || 0)
+      );
+
       if (isDoctorPortal) {
         patientPayload.assigned_doctor_id = user.id;
       } else if (preservedDoctorId !== null && preservedDoctorId !== undefined) {
         patientPayload.assigned_doctor_id = preservedDoctorId;
       }
 
-      if (demographicsChanged) {
+      if (isDoctorLikePortal) {
+        patientPayload.medcare_nurse_id = medcareNurseIdValue;
+      }
+
+      if (demographicsChanged || medcareChanged) {
         await updatePatient(selectedPatientId, patientPayload);
       }
 
@@ -652,7 +679,10 @@ export default function PatientOperationsPanel({ user }) {
                 uhid: doctorEditForm.uhid.trim(),
                 full_name: doctorEditForm.fullName.trim(),
                 age: ageValue,
-                gender: doctorEditForm.gender
+                gender: doctorEditForm.gender,
+                medcare_nurse_id: medcareNurseIdValue,
+                medcare_nurse_name:
+                  nurses.find((nurse) => nurse.id === medcareNurseIdValue)?.full_name || null
               }
             : patient
         )
@@ -722,6 +752,45 @@ export default function PatientOperationsPanel({ user }) {
     }
   }
 
+  async function handleAssignMedcare() {
+    if (!selectedPatientId) {
+      setError("Select a patient first.");
+      return;
+    }
+
+    const nurseId = toNumber(medcareAssignNurseId);
+    if (!nurseId) {
+      setError("Select a nurse.");
+      return;
+    }
+
+    setMessage("");
+    setError("");
+    setSavingMedcare(true);
+    try {
+      await updatePatient(selectedPatientId, { medcare_nurse_id: nurseId });
+      const selectedNurse = nurses.find((nurse) => nurse.id === nurseId);
+      setPatients((prev) =>
+        prev.map((patient) =>
+          patient.id === selectedPatientId
+            ? {
+                ...patient,
+                medcare_nurse_id: nurseId,
+                medcare_nurse_name: selectedNurse?.full_name || null
+              }
+            : patient
+        )
+      );
+      setDoctorEditForm((prev) => ({ ...prev, medcareNurseId: String(nurseId) }));
+      setMedcareAssignMode(false);
+      setMessage("Medcare nurse assigned.");
+    } catch (assignError) {
+      setError(assignError.message || "Unable to assign medcare nurse.");
+    } finally {
+      setSavingMedcare(false);
+    }
+  }
+
   return (
     <section className="panel">
       <div className="panel-header-row">
@@ -738,7 +807,7 @@ export default function PatientOperationsPanel({ user }) {
             }}
             type="button"
           >
-            My Patients
+            Patients
           </button>
           <button
             className={`btn ${isDoctorLikePortal ? (viewMode ? "primary" : "subtle") : (viewMode ? "subtle" : "primary")}`}
@@ -751,7 +820,7 @@ export default function PatientOperationsPanel({ user }) {
             }}
             type="button"
           >
-            Patient Records
+            Records
           </button>
         </div>
       </div>
@@ -894,14 +963,55 @@ export default function PatientOperationsPanel({ user }) {
                 <div className="form-block">
                   <div className="panel-header-row">
                     <h4>Patient Record</h4>
-                    <button
-                      className="btn subtle"
-                      onClick={() => setDoctorEditMode((value) => !value)}
-                      type="button"
-                    >
-                      {doctorEditMode ? "Cancel" : "Edit"}
-                    </button>
+                    <div className="panel-actions-row">
+                      <button
+                        className="btn subtle"
+                        onClick={() => {
+                          setMedcareAssignMode((value) => !value);
+                          setDoctorEditMode(false);
+                        }}
+                        type="button"
+                      >
+                        {medcareAssignMode ? "Cancel" : "Assign Medcare"}
+                      </button>
+                      <button
+                        className="btn subtle"
+                        onClick={() => {
+                          setDoctorEditMode((value) => !value);
+                          setMedcareAssignMode(false);
+                        }}
+                        type="button"
+                      >
+                        {doctorEditMode ? "Cancel" : "Edit"}
+                      </button>
+                    </div>
                   </div>
+                  {medcareAssignMode && (
+                    <div className="form-grid compact">
+                      <label>
+                        Assign Medcare Nurse
+                        <select
+                          onChange={(event) => setMedcareAssignNurseId(event.target.value)}
+                          value={medcareAssignNurseId}
+                        >
+                          <option value="">Select nurse</option>
+                          {nurses.map((nurse) => (
+                            <option key={nurse.id} value={nurse.id}>
+                              {nurse.full_name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        className="btn primary"
+                        disabled={savingMedcare}
+                        onClick={handleAssignMedcare}
+                        type="button"
+                      >
+                        {savingMedcare ? "Saving..." : "Save Medcare"}
+                      </button>
+                    </div>
+                  )}
                   {doctorEditMode ? (
                   <form onSubmit={handleDoctorSaveAll}>
                     <div className="table-wrap">
@@ -1176,6 +1286,29 @@ export default function PatientOperationsPanel({ user }) {
                                 />
                               ) : (
                                 extractPrefixedValues(selectedPatientRecord?.socialFamilyHistory, "Medicine:")
+                              )}
+                            </td>
+                          </tr>
+                          <tr>
+                            <th>Assign Medcare</th>
+                            <td colSpan="5">
+                              {doctorEditMode && isDoctorLikePortal ? (
+                                <select
+                                  onChange={(event) =>
+                                    setDoctorEditForm((prev) => ({ ...prev, medcareNurseId: event.target.value }))
+                                  }
+                                  value={doctorEditForm.medcareNurseId}
+                                >
+                                  <option value="">Select nurse</option>
+                                  {nurses.map((nurse) => (
+                                    <option key={nurse.id} value={nurse.id}>
+                                      {nurse.full_name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                selectedPatient?.medcare_nurse_name ||
+                                "-"
                               )}
                             </td>
                           </tr>

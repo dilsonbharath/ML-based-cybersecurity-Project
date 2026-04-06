@@ -39,6 +39,7 @@ class PatientCreate(BaseModel):
     age: int = Field(gt=0, le=130)
     gender: GenderType
     assigned_doctor_id: int | None = None
+    medcare_nurse_id: int | None = None
 
 
 class PatientUpdate(BaseModel):
@@ -47,6 +48,7 @@ class PatientUpdate(BaseModel):
     age: int | None = Field(default=None, gt=0, le=130)
     gender: GenderType | None = None
     assigned_doctor_id: int | None = None
+    medcare_nurse_id: int | None = None
 
 
 class AppointmentCreate(BaseModel):

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from ..cache import get_cached_json, invalidate_all_cache, make_cache_key, set_cached_json
 from ..database import IntegrityError, get_connection, log_operation, to_dict, to_list
 from ..deps import require_roles
 from ..schemas import PatientCreate, PatientUpdate
@@ -17,9 +18,12 @@ def _fetch_patient(conn, patient_id: int):
           p.age,
           p.gender,
           p.assigned_doctor_id,
-          d.full_name AS assigned_doctor_name
+                    d.full_name AS assigned_doctor_name,
+                    p.medcare_nurse_id,
+                    n.full_name AS medcare_nurse_name
         FROM patients p
         JOIN users d ON d.id = p.assigned_doctor_id
+                LEFT JOIN users n ON n.id = p.medcare_nurse_id
         WHERE p.id = ?
         """,
         (patient_id,),
@@ -31,6 +35,12 @@ def list_patients(
     search: str | None = Query(default=None),
     user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk")),
 ):
+    normalized_search = (search or "").strip().lower()
+    cache_key = make_cache_key("patients", "list", user["role"], user["id"], normalized_search)
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         if search:
             query = f"%{search.strip().lower()}%"
@@ -43,9 +53,12 @@ def list_patients(
                   p.age,
                   p.gender,
                   p.assigned_doctor_id,
-                  d.full_name AS assigned_doctor_name
+                                    d.full_name AS assigned_doctor_name,
+                                    p.medcare_nurse_id,
+                                    n.full_name AS medcare_nurse_name
                 FROM patients p
                 JOIN users d ON d.id = p.assigned_doctor_id
+                                LEFT JOIN users n ON n.id = p.medcare_nurse_id
                 WHERE LOWER(p.full_name) LIKE ? OR LOWER(p.uhid) LIKE ?
                 ORDER BY p.full_name
                 """,
@@ -61,13 +74,18 @@ def list_patients(
                   p.age,
                   p.gender,
                   p.assigned_doctor_id,
-                  d.full_name AS assigned_doctor_name
+                                    d.full_name AS assigned_doctor_name,
+                                    p.medcare_nurse_id,
+                                    n.full_name AS medcare_nurse_name
                 FROM patients p
                 JOIN users d ON d.id = p.assigned_doctor_id
+                                LEFT JOIN users n ON n.id = p.medcare_nurse_id
                 ORDER BY p.full_name
                 """
             ).fetchall()
-    return to_list(rows)
+            data = to_list(rows)
+            set_cached_json(cache_key, data, ttl_seconds=10)
+            return data
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -92,11 +110,24 @@ def create_patient(
         if doctor is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Doctor not found")
 
+        if payload.medcare_nurse_id is not None:
+            if user["role"] not in {"Doctor", "Nurse"}:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only doctors or nurses can assign medcare nurse",
+                )
+            nurse = conn.execute(
+                "SELECT id FROM users WHERE id = ? AND role = 'Nurse' AND is_active = 1",
+                (payload.medcare_nurse_id,),
+            ).fetchone()
+            if nurse is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nurse not found")
+
         try:
             cursor = conn.execute(
                 """
-                INSERT INTO patients (uhid, full_name, age, gender, assigned_doctor_id)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO patients (uhid, full_name, age, gender, assigned_doctor_id, medcare_nurse_id)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.uhid.strip(),
@@ -104,6 +135,7 @@ def create_patient(
                     payload.age,
                     payload.gender,
                     assigned_doctor_id,
+                    payload.medcare_nurse_id,
                 ),
             )
         except IntegrityError as exc:
@@ -122,6 +154,7 @@ def create_patient(
         )
 
         row = _fetch_patient(conn, patient_id)
+    invalidate_all_cache()
     return to_dict(row)
 
 
@@ -149,6 +182,9 @@ def update_patient(
     if payload.assigned_doctor_id is not None:
         updates.append("assigned_doctor_id = ?")
         values.append(payload.assigned_doctor_id)
+    if payload.medcare_nurse_id is not None:
+        updates.append("medcare_nurse_id = ?")
+        values.append(payload.medcare_nurse_id)
 
     if not updates:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
@@ -172,6 +208,22 @@ def update_patient(
                     detail="Assigned doctor not found",
                 )
 
+        if payload.medcare_nurse_id is not None:
+            if user["role"] not in {"Doctor", "Nurse"}:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only doctors or nurses can assign medcare nurse",
+                )
+            nurse_exists = conn.execute(
+                "SELECT id FROM users WHERE id = ? AND role = 'Nurse' AND is_active = 1",
+                (payload.medcare_nurse_id,),
+            ).fetchone()
+            if nurse_exists is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Assigned medcare nurse not found",
+                )
+
         try:
             conn.execute(
                 f"UPDATE patients SET {', '.join(updates)} WHERE id = ?",
@@ -190,4 +242,5 @@ def update_patient(
         )
 
         row = _fetch_patient(conn, patient_id)
+    invalidate_all_cache()
     return to_dict(row)

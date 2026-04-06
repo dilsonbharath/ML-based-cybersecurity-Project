@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from ..cache import get_cached_json, make_cache_key, set_cached_json
 from ..database import get_connection, to_list
 from ..deps import get_current_user, require_roles
 
@@ -8,6 +9,11 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("/doctors")
 def get_doctors(user=Depends(get_current_user)):
+    cache_key = make_cache_key("users", "doctors")
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -17,11 +23,39 @@ def get_doctors(user=Depends(get_current_user)):
             ORDER BY full_name
             """
         ).fetchall()
-    return to_list(rows)
+    data = to_list(rows)
+    set_cached_json(cache_key, data, ttl_seconds=60)
+    return data
+
+
+@router.get("/nurses")
+def get_nurses(user=Depends(get_current_user)):
+    cache_key = make_cache_key("users", "nurses")
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, full_name, email
+            FROM users
+            WHERE role = 'Nurse' AND is_active = 1
+            ORDER BY full_name
+            """
+        ).fetchall()
+    data = to_list(rows)
+    set_cached_json(cache_key, data, ttl_seconds=60)
+    return data
 
 
 @router.get("/role-wise")
 def get_role_wise_users(user=Depends(require_roles("Administrator"))):
+    cache_key = make_cache_key("users", "role-wise")
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     role_order = ["Doctor", "Nurse", "Administrator", "registration_desk"]
     order_lookup = {role: index for index, role in enumerate(role_order)}
 
@@ -46,7 +80,7 @@ def get_role_wise_users(user=Depends(require_roles("Administrator"))):
         )
 
     ordered_roles = sorted(grouped.keys(), key=lambda role: order_lookup.get(role, 99))
-    return [
+    data = [
         {
             "role": role,
             "count": len(grouped[role]),
@@ -54,3 +88,5 @@ def get_role_wise_users(user=Depends(require_roles("Administrator"))):
         }
         for role in ordered_roles
     ]
+    set_cached_json(cache_key, data, ttl_seconds=30)
+    return data
