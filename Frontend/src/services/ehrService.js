@@ -1,5 +1,7 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api";
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API === "true";
+const CLIENT_CACHE_TTL_MS = 10000;
+const clientGetCache = new Map();
 const SESSION_KEY = "ehr_active_session";
 const MOCK_DB_KEY = "ehr_mock_database_v1";
 const ROLE_OPTIONS = ["Doctor", "Nurse", "Administrator", "registration_desk"];
@@ -66,6 +68,8 @@ function createSeedDatabase() {
         email: "dr.anitha@bloom.health",
         password: "Doctor@123",
         role: "Doctor",
+        approval_status: "Approved",
+        shift_slot: "2-10",
         is_active: 1
       },
       {
@@ -74,6 +78,8 @@ function createSeedDatabase() {
         email: "nurse.priya@bloom.health",
         password: "Nurse@123",
         role: "Nurse",
+        approval_status: "Approved",
+        shift_slot: "2-10",
         is_active: 1
       },
       {
@@ -82,6 +88,8 @@ function createSeedDatabase() {
         email: "admin.ravi@bloom.health",
         password: "Admin@123",
         role: "Administrator",
+        approval_status: "Approved",
+        shift_slot: null,
         is_active: 1
       }
     ],
@@ -299,7 +307,9 @@ function toUserModel(apiUser) {
     id: apiUser.id,
     name: apiUser.full_name,
     email: apiUser.email,
-    role: apiUser.role
+    role: apiUser.role,
+    approvalStatus: apiUser.approval_status || "Approved",
+    shiftSlot: apiUser.shift_slot || null
   };
 }
 
@@ -336,6 +346,7 @@ function logOperation(db, userId, action, entityType, entityId, details) {
 
 function mapPatientRow(db, patient) {
   const doctor = db.users.find((row) => row.id === patient.assigned_doctor_id);
+  const medcareNurse = db.users.find((row) => row.id === patient.medcare_nurse_id);
   return {
     id: patient.id,
     uhid: patient.uhid,
@@ -343,7 +354,9 @@ function mapPatientRow(db, patient) {
     age: patient.age,
     gender: patient.gender,
     assigned_doctor_id: patient.assigned_doctor_id,
-    assigned_doctor_name: doctor?.full_name || "Unknown"
+    assigned_doctor_name: doctor?.full_name || "Unknown",
+    medcare_nurse_id: patient.medcare_nurse_id || null,
+    medcare_nurse_name: medcareNurse?.full_name || null
   };
 }
 
@@ -453,7 +466,13 @@ function serializePatientRecord(db, patientId) {
       age: patient.age,
       gender: patient.gender,
       uhid: patient.uhid,
-      doctorAssigned: doctor?.full_name || "Unknown"
+      doctorAssigned: doctor?.full_name || "Unknown",
+      medcareNurse: patient.medcare_nurse_id
+        ? {
+            id: patient.medcare_nurse_id,
+            fullName: db.users.find((row) => row.id === patient.medcare_nurse_id)?.full_name || null
+          }
+        : null
     },
     record: {
       chiefComplaint: clinical.chief_complaint || "",
@@ -557,11 +576,13 @@ async function mockApiRequest(path, options = {}) {
       email,
       password: body.password,
       role,
+      approval_status: "Pending",
+      shift_slot: null,
       is_active: 1
     });
     logOperation(db, userId, "signup", "users", userId, "New account created");
     writeMockDb(db);
-    return { ok: true, message: "Signup successful. Please sign in." };
+    return { ok: true, message: "Signup request submitted. Please wait for admin approval." };
   }
 
   if (pathname === "/auth/signin" && method === "POST") {
@@ -574,6 +595,9 @@ async function mockApiRequest(path, options = {}) {
     if (!user || user.password !== body.password) {
       throw new Error("Invalid credentials");
     }
+    if (user.approval_status !== "Approved") {
+      throw new Error("Account is pending administrator approval. Only approved users can sign in.");
+    }
 
     logOperation(db, user.id, "signin", "sessions", "local", "User signed in");
     writeMockDb(db);
@@ -584,7 +608,9 @@ async function mockApiRequest(path, options = {}) {
         id: user.id,
         full_name: user.full_name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        approval_status: user.approval_status || "Approved",
+        shift_slot: user.shift_slot || null
       }
     };
   }
@@ -602,7 +628,9 @@ async function mockApiRequest(path, options = {}) {
       id: user.id,
       full_name: user.full_name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      approval_status: user.approval_status || "Approved",
+      shift_slot: user.shift_slot || null
     };
   }
 
@@ -696,13 +724,41 @@ async function mockApiRequest(path, options = {}) {
 
   if (pathname === "/users/doctors" && method === "GET") {
     const { db } = getSessionPrincipal();
+    const shiftSlot = (searchParams.get("shift_slot") || "").trim();
     return db.users
-      .filter((row) => row.role === "Doctor" && row.is_active === 1)
+      .filter(
+        (row) =>
+          row.role === "Doctor" &&
+          row.is_active === 1 &&
+          row.approval_status === "Approved" &&
+          (!shiftSlot || row.shift_slot === shiftSlot)
+      )
       .sort((a, b) => a.full_name.localeCompare(b.full_name))
       .map((row) => ({
         id: row.id,
         full_name: row.full_name,
-        email: row.email
+        email: row.email,
+        shift_slot: row.shift_slot || null
+      }));
+  }
+
+  if (pathname === "/users/nurses" && method === "GET") {
+    const { db } = getSessionPrincipal();
+    const shiftSlot = (searchParams.get("shift_slot") || "").trim();
+    return db.users
+      .filter(
+        (row) =>
+          row.role === "Nurse" &&
+          row.is_active === 1 &&
+          row.approval_status === "Approved" &&
+          (!shiftSlot || row.shift_slot === shiftSlot)
+      )
+      .sort((a, b) => a.full_name.localeCompare(b.full_name))
+      .map((row) => ({
+        id: row.id,
+        full_name: row.full_name,
+        email: row.email,
+        shift_slot: row.shift_slot || null
       }));
   }
 
@@ -713,7 +769,13 @@ async function mockApiRequest(path, options = {}) {
       .filter((row) => row.is_active === 1)
       .reduce((acc, row) => {
         const users = acc[row.role] || [];
-        users.push({ id: row.id, full_name: row.full_name, email: row.email });
+        users.push({
+          id: row.id,
+          full_name: row.full_name,
+          email: row.email,
+          approval_status: row.approval_status || "Approved",
+          shift_slot: row.shift_slot || null
+        });
         return { ...acc, [row.role]: users };
       }, {});
 
@@ -724,6 +786,78 @@ async function mockApiRequest(path, options = {}) {
         count: grouped[role].length,
         users: grouped[role].sort((a, b) => a.full_name.localeCompare(b.full_name))
       }));
+  }
+
+  if (pathname === "/users/pending-approvals" && method === "GET") {
+    const { db } = getSessionPrincipal(["Administrator"]);
+    return db.users
+      .filter((row) => row.is_active === 1 && row.approval_status === "Pending")
+      .map((row) => ({
+        id: row.id,
+        full_name: row.full_name,
+        email: row.email,
+        role: row.role,
+        approval_status: row.approval_status,
+        shift_slot: row.shift_slot || null
+      }));
+  }
+
+  const approvalMatch = pathname.match(/^\/users\/(\d+)\/approval$/);
+  if (approvalMatch && method === "PATCH") {
+    const { db, user } = getSessionPrincipal(["Administrator"]);
+    const userId = Number(approvalMatch[1]);
+    const target = db.users.find((row) => row.id === userId && row.is_active === 1);
+    if (!target) {
+      throw new Error("User not found");
+    }
+    target.approval_status = body.approval_status;
+    logOperation(db, user.id, "update", "users", userId, `Approval status set to ${body.approval_status}`);
+    writeMockDb(db);
+    return { ok: true };
+  }
+
+  const shiftMatch = pathname.match(/^\/users\/(\d+)\/shift$/);
+  if (shiftMatch && method === "PATCH") {
+    const { db, user } = getSessionPrincipal(["Administrator"]);
+    const userId = Number(shiftMatch[1]);
+    const target = db.users.find((row) => row.id === userId && row.is_active === 1);
+    if (!target) {
+      throw new Error("User not found");
+    }
+    target.shift_slot = body.shift_slot || null;
+    logOperation(db, user.id, "update", "users", userId, `Shift set to ${target.shift_slot || "None"}`);
+    writeMockDb(db);
+    return { ok: true };
+  }
+
+  if (pathname === "/users/staff-by-shift" && method === "GET") {
+    const { db } = getSessionPrincipal(["registration_desk", "Administrator"]);
+    const shiftSlot = (searchParams.get("shift_slot") || "").trim();
+    if (!shiftSlot) {
+      throw new Error("Invalid shift slot");
+    }
+    return {
+      doctors: db.users
+        .filter(
+          (row) =>
+            row.role === "Doctor" &&
+            row.is_active === 1 &&
+            row.approval_status === "Approved" &&
+            row.shift_slot === shiftSlot
+        )
+        .sort((a, b) => a.full_name.localeCompare(b.full_name))
+        .map((row) => ({ id: row.id, full_name: row.full_name, email: row.email, shift_slot: row.shift_slot })),
+      nurses: db.users
+        .filter(
+          (row) =>
+            row.role === "Nurse" &&
+            row.is_active === 1 &&
+            row.approval_status === "Approved" &&
+            row.shift_slot === shiftSlot
+        )
+        .sort((a, b) => a.full_name.localeCompare(b.full_name))
+        .map((row) => ({ id: row.id, full_name: row.full_name, email: row.email, shift_slot: row.shift_slot }))
+    };
   }
 
   if (pathname === "/patients" && method === "GET") {
@@ -780,6 +914,7 @@ async function mockApiRequest(path, options = {}) {
       age: Number(body.age),
       gender: body.gender,
       assigned_doctor_id: assignedDoctorId,
+      medcare_nurse_id: body.medcare_nurse_id || null,
       updated_at: nowStamp()
     };
 
@@ -903,6 +1038,15 @@ async function mockApiRequest(path, options = {}) {
       }
     }
 
+    if (body.medcare_nurse_id !== null && body.medcare_nurse_id !== undefined) {
+      const nurseExists = db.users.some(
+        (row) => row.id === body.medcare_nurse_id && row.role === "Nurse" && row.is_active === 1
+      );
+      if (!nurseExists) {
+        throw new Error("Assigned medcare nurse not found");
+      }
+    }
+
     if (body.uhid !== null && body.uhid !== undefined) {
       const nextUhid = body.uhid.trim();
       const duplicate = db.patients.some(
@@ -924,6 +1068,9 @@ async function mockApiRequest(path, options = {}) {
     }
     if (body.assigned_doctor_id !== null && body.assigned_doctor_id !== undefined) {
       patient.assigned_doctor_id = body.assigned_doctor_id;
+    }
+    if (body.medcare_nurse_id !== null && body.medcare_nurse_id !== undefined) {
+      patient.medcare_nurse_id = body.medcare_nurse_id;
     }
     patient.updated_at = nowStamp();
 
@@ -1012,6 +1159,7 @@ async function fetchApiRequest(path, options = {}) {
   }
 
   const token = getToken();
+  const method = (options.method || "GET").toUpperCase();
   const headers = {
     "Content-Type": "application/json",
     ...(options.headers || {})
@@ -1020,8 +1168,18 @@ async function fetchApiRequest(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
+  const cacheKey = `${API_BASE}${path}|${token || "anon"}`;
+  if (method === "GET") {
+    const cached = clientGetCache.get(cacheKey);
+    if (cached && Date.now() - cached.time < CLIENT_CACHE_TTL_MS) {
+      return cached.value;
+    }
+  } else {
+    clientGetCache.clear();
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
-    method: options.method || "GET",
+    method,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
@@ -1045,6 +1203,10 @@ async function fetchApiRequest(path, options = {}) {
     }
     const detail = formatApiError(payload?.detail);
     throw new Error(detail);
+  }
+
+  if (method === "GET") {
+    clientGetCache.set(cacheKey, { time: Date.now(), value: payload });
   }
 
   return payload;
@@ -1204,12 +1366,40 @@ export async function getPatients(search = "") {
   return apiRequest(`/patients${query}`);
 }
 
-export async function getDoctors() {
-  return apiRequest("/users/doctors");
+export async function getDoctors(shiftSlot = "") {
+  const query = shiftSlot ? `?shift_slot=${encodeURIComponent(shiftSlot)}` : "";
+  return apiRequest(`/users/doctors${query}`);
+}
+
+export async function getNurses(shiftSlot = "") {
+  const query = shiftSlot ? `?shift_slot=${encodeURIComponent(shiftSlot)}` : "";
+  return apiRequest(`/users/nurses${query}`);
 }
 
 export async function getRoleWiseUsers() {
   return apiRequest("/users/role-wise");
+}
+
+export async function getPendingApprovals() {
+  return apiRequest("/users/pending-approvals");
+}
+
+export async function updateUserApproval(userId, approvalStatus) {
+  return apiRequest(`/users/${userId}/approval`, {
+    method: "PATCH",
+    body: { approval_status: approvalStatus }
+  });
+}
+
+export async function updateUserShift(userId, shiftSlot) {
+  return apiRequest(`/users/${userId}/shift`, {
+    method: "PATCH",
+    body: { shift_slot: shiftSlot || null }
+  });
+}
+
+export async function getStaffByShift(shiftSlot) {
+  return apiRequest(`/users/staff-by-shift?shift_slot=${encodeURIComponent(shiftSlot)}`);
 }
 
 export async function createPatient(payload) {

@@ -1,4 +1,4 @@
-import PatientOperationsPanel from "../shared/PatientOperationsPanel";
+import UnifiedClinicalPortal from "../shared/UnifiedClinicalPortal";
 
 export default function DoctorPortal({ user }) {
   return (
@@ -8,7 +8,7 @@ export default function DoctorPortal({ user }) {
         <p>{user.name}</p>
       </div>
 
-      <PatientOperationsPanel user={user} />
+      <UnifiedClinicalPortal user={user} />
     </section>
   );
 }

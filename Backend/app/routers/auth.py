@@ -41,15 +41,15 @@ def signup(payload: SignUpRequest):
 
         cursor = conn.execute(
             """
-            INSERT INTO users (full_name, email, password_hash, role)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO users (full_name, email, password_hash, role, approval_status)
+            VALUES (?, ?, ?, ?, 'Pending')
             """,
             (payload.full_name.strip(), email, hash_password(payload.password), payload.role),
         )
         user_id = int(cursor.lastrowid)
         log_operation(conn, user_id, "signup", "users", str(user_id), "New account created")
 
-    return {"ok": True, "message": "Signup successful. Please sign in."}
+    return {"ok": True, "message": "Signup request submitted. Please wait for admin approval."}
 
 
 @router.post("/signin", response_model=AuthResponse)
@@ -57,13 +57,22 @@ def signin(payload: SignInRequest):
     email = payload.email.lower().strip()
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, full_name, email, role, password_hash FROM users WHERE LOWER(email) = ? AND is_active = 1",
+            """
+            SELECT id, full_name, email, role, password_hash, approval_status, shift_slot
+            FROM users
+            WHERE LOWER(email) = ? AND is_active = 1
+            """,
             (email,),
         ).fetchone()
         if row is None or not verify_password(payload.password, row["password_hash"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
+            )
+        if row["approval_status"] != "Approved":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is pending administrator approval. Only approved users can sign in.",
             )
 
         token = create_token()
@@ -79,6 +88,8 @@ def signin(payload: SignInRequest):
         "full_name": row["full_name"],
         "email": row["email"],
         "role": row["role"],
+        "approval_status": row["approval_status"],
+        "shift_slot": row["shift_slot"],
     }
     return {"token": token, "user": user}
 
@@ -95,7 +106,7 @@ def logout(user=Depends(get_current_user)):
 def me(user=Depends(get_current_user)):
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, full_name, email, role FROM users WHERE id = ?",
+            "SELECT id, full_name, email, role, approval_status, shift_slot FROM users WHERE id = ?",
             (user["id"],),
         ).fetchone()
     data = to_dict(row)

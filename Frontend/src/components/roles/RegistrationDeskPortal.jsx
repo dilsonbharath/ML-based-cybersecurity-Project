@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   createAppointment,
   createPatient,
-  getDoctors,
   getNurseSnapshot,
   getPatients,
+  getStaffByShift,
   getTodaysAppointments,
   updatePatientRecord
 } from "../../services/ehrService";
@@ -30,8 +30,7 @@ function nextUhidFromRows(rows) {
   return `UHID-${currentYear}-${String(nextSerial).padStart(4, "0")}`;
 }
 
-const VITALS_TASKS = ["Blood", "Sugar", "Pressure", "Heart Rate", "Weight", "Height"];
-const NURSE_OPTIONS = ["Nurse Priya Menon", "Nurse Kavya Raj", "Nurse Harini S", "Nurse Deepa N"];
+const SHIFT_OPTIONS = ["2-10", "10-18", "18-2"];
 
 export default function RegistrationDeskPortal({ user }) {
   const [snapshot, setSnapshot] = useState({
@@ -39,11 +38,9 @@ export default function RegistrationDeskPortal({ user }) {
     pendingTasks: 0
   });
   const [doctors, setDoctors] = useState([]);
+  const [nurses, setNurses] = useState([]);
   const [allPatients, setAllPatients] = useState([]);
-  const [recentPatients, setRecentPatients] = useState([]);
   const [todayAppointments, setTodayAppointments] = useState([]);
-  const [nursePlans, setNursePlans] = useState({});
-  const [showAllPatients, setShowAllPatients] = useState(false);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -55,10 +52,11 @@ export default function RegistrationDeskPortal({ user }) {
     age: "",
     gender: "Male",
     problem: "",
-    assignedNurse: NURSE_OPTIONS[0],
+    assignedNurse: "",
     assignedDoctorId: "",
     appointmentDate: todayISO(),
-    appointmentTime: "09:00"
+    appointmentTime: "09:00",
+    shiftSlot: "2-10"
   });
 
   useEffect(() => {
@@ -77,18 +75,22 @@ export default function RegistrationDeskPortal({ user }) {
       }
     }
 
-    async function loadDoctors() {
+    async function loadShiftStaff() {
       try {
-        const rows = await getDoctors();
+        const rows = await getStaffByShift(form.shiftSlot);
         if (!stopped) {
-          setDoctors(rows);
-          if (!form.assignedDoctorId && rows.length) {
-            setForm((prev) => ({ ...prev, assignedDoctorId: String(rows[0].id) }));
-          }
+          setDoctors(rows.doctors || []);
+          setNurses(rows.nurses || []);
+          setForm((prev) => ({
+            ...prev,
+            assignedDoctorId: rows.doctors?.length ? String(rows.doctors[0].id) : "",
+            assignedNurse: rows.nurses?.length ? rows.nurses[0].full_name : ""
+          }));
         }
       } catch {
         if (!stopped) {
           setDoctors([]);
+          setNurses([]);
         }
       }
     }
@@ -98,13 +100,11 @@ export default function RegistrationDeskPortal({ user }) {
         const rows = await getPatients("");
         if (!stopped) {
           setAllPatients(rows);
-          setRecentPatients(rows.slice(0, 8));
           setForm((prev) => ({ ...prev, uhid: nextUhidFromRows(rows) }));
         }
       } catch {
         if (!stopped) {
           setAllPatients([]);
-          setRecentPatients([]);
         }
       }
     }
@@ -123,47 +123,58 @@ export default function RegistrationDeskPortal({ user }) {
     }
 
     loadSnapshot();
-    loadDoctors();
+    loadShiftStaff();
     loadRecentPatients();
     loadTodaysAppointments();
 
-    const timer = setInterval(loadSnapshot, 5000);
+    const timer = setInterval(loadSnapshot, 12000);
     return () => {
       stopped = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [form.shiftSlot]);
 
   const selectedDoctorName = useMemo(() => {
     const match = doctors.find((row) => String(row.id) === String(form.assignedDoctorId));
     return match?.full_name || "Not selected";
   }, [doctors, form.assignedDoctorId]);
 
-  const todaysPatientIds = useMemo(
-    () => [...new Set(todayAppointments.map((row) => row.patientId))],
-    [todayAppointments]
-  );
-
   const visiblePatients = useMemo(() => {
     const normalized = search.trim().toLowerCase();
-    const source =
-      showAllPatients || normalized
-        ? allPatients
-        : allPatients.filter((row) => todaysPatientIds.includes(row.id));
+    const activeAppointments = todayAppointments.filter((row) => row.status !== "Completed");
+    const source = activeAppointments
+      .map((appt) => {
+        const patient = allPatients.find((row) => row.id === appt.patientId);
+        if (!patient) {
+          return null;
+        }
+        return {
+          ...patient,
+          appointmentStatus: appt.status
+        };
+      })
+      .filter(Boolean);
 
-    if (!normalized) {
-      return source;
-    }
-
+    if (!normalized) return source;
     return source.filter(
       (row) =>
         String(row.full_name || "").toLowerCase().includes(normalized) ||
         String(row.uhid || "").toLowerCase().includes(normalized)
     );
-  }, [allPatients, search, showAllPatients, todaysPatientIds]);
+  }, [allPatients, todayAppointments, search]);
 
   function updateField(name, value) {
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === "fullName") {
+        const matched = allPatients.find((row) => normalizeName(row.full_name) === normalizeName(value));
+        if (matched) {
+          next.age = String(matched.age || "");
+          next.gender = matched.gender || prev.gender;
+        }
+      }
+      return next;
+    });
   }
 
   async function handleSubmit(event) {
@@ -173,6 +184,11 @@ export default function RegistrationDeskPortal({ user }) {
 
     if (!form.assignedDoctorId) {
       setError("Please assign a doctor.");
+      return;
+    }
+
+    if (!form.assignedNurse) {
+      setError("Please assign a nurse.");
       return;
     }
 
@@ -218,14 +234,6 @@ export default function RegistrationDeskPortal({ user }) {
         status: "Scheduled"
       });
 
-      setNursePlans((prev) => ({
-        ...prev,
-        [patientId]: {
-          nurse: form.assignedNurse,
-          tasks: VITALS_TASKS.join(", ")
-        }
-      }));
-
       setMessage("Patient registered and assigned successfully.");
       setForm({
         uhid: "",
@@ -233,15 +241,15 @@ export default function RegistrationDeskPortal({ user }) {
         age: "",
         gender: "Male",
         problem: "",
-        assignedNurse: form.assignedNurse,
+        assignedNurse: form.assignedNurse || nurses[0]?.full_name || "",
         assignedDoctorId: form.assignedDoctorId,
         appointmentDate: todayISO(),
-        appointmentTime: "09:00"
+        appointmentTime: "09:00",
+        shiftSlot: form.shiftSlot
       });
 
       const refreshedPatients = await getPatients("");
       setAllPatients(refreshedPatients);
-      setRecentPatients(refreshedPatients.slice(0, 8));
       setForm((prev) => ({ ...prev, uhid: nextUhidFromRows(refreshedPatients) }));
       const refreshedAppointments = await getTodaysAppointments();
       setTodayAppointments(refreshedAppointments);
@@ -326,6 +334,22 @@ export default function RegistrationDeskPortal({ user }) {
             </label>
 
             <label>
+              Shift Slot
+              <select
+                name="shiftSlot"
+                onChange={(event) => updateField("shiftSlot", event.target.value)}
+                required
+                value={form.shiftSlot}
+              >
+                {SHIFT_OPTIONS.map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
               Assign Doctor
               <select
                 name="assignedDoctorId"
@@ -350,9 +374,10 @@ export default function RegistrationDeskPortal({ user }) {
                 required
                 value={form.assignedNurse}
               >
-                {NURSE_OPTIONS.map((nurse) => (
-                  <option key={nurse} value={nurse}>
-                    {nurse}
+                {!nurses.length && <option value="">No active nurses found</option>}
+                {nurses.map((nurse) => (
+                  <option key={nurse.id} value={nurse.full_name}>
+                    {nurse.full_name}
                   </option>
                 ))}
               </select>
@@ -394,7 +419,6 @@ export default function RegistrationDeskPortal({ user }) {
           </label>
 
           <p className="notice">Assigned doctor: {selectedDoctorName}</p>
-          <p className="notice">Vitals set: {VITALS_TASKS.join(", ")}</p>
           {message && <p className="notice">{message}</p>}
           {error && <p className="error">{error}</p>}
 
@@ -416,9 +440,6 @@ export default function RegistrationDeskPortal({ user }) {
               value={search}
             />
           </label>
-          <button className="btn subtle" onClick={() => setShowAllPatients((value) => !value)} type="button">
-            {showAllPatients ? "Today View" : "Data View"}
-          </button>
         </div>
 
         {!visiblePatients.length && <p className="empty-state">No patient records found.</p>}
@@ -433,7 +454,7 @@ export default function RegistrationDeskPortal({ user }) {
                   <th>Gender</th>
                   <th>Assigned Doctor</th>
                   <th>Assigned Nurse</th>
-                  <th>Vitals Plan</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -444,8 +465,8 @@ export default function RegistrationDeskPortal({ user }) {
                     <td>{row.age}</td>
                     <td>{row.gender}</td>
                     <td>{row.assigned_doctor_name}</td>
-                    <td>{nursePlans[row.id]?.nurse || "-"}</td>
-                    <td>{nursePlans[row.id]?.tasks || "-"}</td>
+                    <td>{row.medcare_nurse_name || "-"}</td>
+                    <td>{row.appointmentStatus}</td>
                   </tr>
                 ))}
               </tbody>

@@ -2,6 +2,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..cache import get_cached_json, invalidate_all_cache, make_cache_key, set_cached_json
 from ..database import STATUS_SET, get_connection, log_operation, to_dict, to_list
 from ..deps import require_roles
 from ..schemas import AppointmentCreate, AppointmentStatusUpdate
@@ -13,6 +14,11 @@ router = APIRouter(prefix="/appointments", tags=["appointments"])
 def list_appointments(
     user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk"))
 ):
+    cache_key = make_cache_key("appointments", "all", user["role"], user["id"])
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -42,6 +48,7 @@ def list_appointments(
         payload["appointmentTime"] = payload.pop("appointment_time")
         payload["appointmentDate"] = payload.pop("appointment_date")
         data.append(payload)
+    set_cached_json(cache_key, data, ttl_seconds=12)
     return data
 
 
@@ -50,6 +57,11 @@ def todays_appointments(
     user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk"))
 ):
     today = date.today().isoformat()
+    cache_key = make_cache_key("appointments", "today", today, user["role"], user["id"])
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         if user["role"] == "Doctor":
             rows = conn.execute(
@@ -101,6 +113,7 @@ def todays_appointments(
         payload["appointmentTime"] = payload.pop("appointment_time")
         payload["appointmentDate"] = payload.pop("appointment_date")
         data.append(payload)
+    set_cached_json(cache_key, data, ttl_seconds=8)
     return data
 
 
@@ -143,6 +156,7 @@ def create_appointment(
             str(appointment_id),
             "New appointment created",
         )
+    invalidate_all_cache()
     return {"ok": True, "id": appointment_id}
 
 
@@ -150,7 +164,7 @@ def create_appointment(
 def update_appointment_status(
     appointment_id: int,
     payload: AppointmentStatusUpdate,
-    user=Depends(require_roles("Doctor")),
+    user=Depends(require_roles("Doctor", "Nurse")),
 ):
     with get_connection() as conn:
         exists = conn.execute("SELECT id FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
@@ -169,4 +183,5 @@ def update_appointment_status(
             str(appointment_id),
             f"Status set to {payload.status}",
         )
+    invalidate_all_cache()
     return {"ok": True}

@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 RoleType = Literal["Doctor", "Nurse", "Administrator", "registration_desk"]
 GenderType = Literal["Male", "Female", "Other"]
 StatusType = Literal["Scheduled", "Checked In", "In Consultation", "Completed"]
+ApprovalStatusType = Literal["Pending", "Approved", "Rejected"]
+ShiftSlotType = Literal["2-10", "10-18", "18-2"]
 
 
 class UserOut(BaseModel):
@@ -12,6 +14,8 @@ class UserOut(BaseModel):
     full_name: str
     email: str
     role: RoleType
+    approval_status: ApprovalStatusType = "Approved"
+    shift_slot: ShiftSlotType | None = None
 
 
 class SignUpRequest(BaseModel):
@@ -28,6 +32,14 @@ class SignInRequest(BaseModel):
     password: str = Field(min_length=6, max_length=120)
 
 
+class AdminApprovalUpdate(BaseModel):
+    approval_status: Literal["Approved", "Rejected"]
+
+
+class AdminShiftUpdate(BaseModel):
+    shift_slot: ShiftSlotType | None = None
+
+
 class AuthResponse(BaseModel):
     token: str
     user: UserOut
@@ -39,6 +51,7 @@ class PatientCreate(BaseModel):
     age: int = Field(gt=0, le=130)
     gender: GenderType
     assigned_doctor_id: int | None = None
+    medcare_nurse_id: int | None = None
 
 
 class PatientUpdate(BaseModel):
@@ -47,6 +60,7 @@ class PatientUpdate(BaseModel):
     age: int | None = Field(default=None, gt=0, le=130)
     gender: GenderType | None = None
     assigned_doctor_id: int | None = None
+    medcare_nurse_id: int | None = None
 
 
 class AppointmentCreate(BaseModel):

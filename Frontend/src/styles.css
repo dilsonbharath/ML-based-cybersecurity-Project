@@ -133,9 +133,78 @@ a {
 }
 
 .home-slider {
-  background: transparent;
-  padding: 1.1rem 0 1rem;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(234, 244, 255, 0.8));
+  padding: 1.2rem;
+  border: 1px solid #dbe9fb;
+  border-radius: 1rem;
+  box-shadow: 0 14px 34px rgba(34, 92, 155, 0.08);
   border-top: none;
+}
+
+.landing-full-page {
+  width: 100%;
+}
+
+.landing-full-stack {
+  width: 100%;
+}
+
+.landing-full-slide {
+  position: relative;
+  min-height: clamp(360px, calc(82vh - 92px), 720px);
+  width: 100%;
+  overflow: hidden;
+}
+
+.landing-full-image {
+  width: 100%;
+  height: 100%;
+  min-height: clamp(360px, calc(82vh - 92px), 720px);
+  object-fit: cover;
+  display: block;
+}
+
+.landing-full-slide:first-child {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+}
+
+.landing-full-slide:first-child .landing-full-image {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+  width: 100% !important;
+  object-fit: cover;
+}
+
+.landing-full-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 2rem min(7vw, 96px);
+  display: grid;
+  align-content: center;
+  gap: 0.8rem;
+  background: linear-gradient(90deg, rgba(8, 28, 52, 0.62), rgba(8, 28, 52, 0.2));
+  color: #fff;
+}
+
+.landing-full-overlay h1 {
+  margin: 0;
+  max-width: 18ch;
+  font-size: clamp(2rem, 4.2vw, 3.3rem);
+  line-height: 1.08;
+}
+
+.landing-full-overlay p {
+  margin: 0;
+  max-width: 64ch;
+  line-height: 1.45;
+}
+
+.landing-full-overlay .slide-kicker {
+  color: #d9ecff;
 }
 
 .slider-top-row {
@@ -172,6 +241,23 @@ a {
   color: var(--muted);
   line-height: 1.48;
   max-width: 58ch;
+}
+
+.landing-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 1rem;
+}
+
+.landing-badges span {
+  border: 1px solid #c7dcf8;
+  background: #f1f7ff;
+  color: #2a5f95;
+  border-radius: 999px;
+  padding: 0.28rem 0.58rem;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .slide-copy {
@@ -225,12 +311,67 @@ a {
 }
 
 .slide-controls {
-  margin-top: 0.85rem;
+  margin-top: 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
 }
+
+.landing-quick-stats {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.landing-quick-stats article {
+  border: 1px solid #d5e4f8;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 0.8rem;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.landing-quick-stats strong {
+  font-size: 1rem;
+  color: #194b7f;
+}
+
+.landing-quick-stats span {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.landing-feature-showcase {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.landing-feature-card {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.9rem 0;
+  box-shadow: none;
+}
+
+.landing-feature-card h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.landing-feature-card p {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
 
 .slide-nav {
   border: 1px solid #c5daf6;
@@ -1394,6 +1535,21 @@ textarea:focus {
   font-size: 0.78rem;
 }
 
+.unified-clinical {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.unified-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.unified-columns .form-block h4 {
+  margin-bottom: 0.5rem;
+}
+
 .abnormal {
   color: var(--danger);
   font-weight: 600;
@@ -1425,6 +1581,11 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .landing-quick-stats,
+  .landing-feature-showcase {
+    grid-template-columns: 1fr;
+  }
+
   .marketing-hero,
   .marketing-grid,
   .marketing-grid.two-column,
@@ -1446,9 +1607,34 @@ textarea:focus {
   .patient-ops-layout {
     grid-template-columns: 1fr;
   }
+
+  .unified-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {
+  .landing-full-slide {
+    min-height: clamp(300px, calc(66vh - 78px), 520px);
+  }
+
+  .landing-full-image {
+    min-height: clamp(300px, calc(66vh - 78px), 520px);
+  }
+
+  .landing-full-slide:first-child {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+  }
+
+  .landing-full-slide:first-child .landing-full-image {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+    width: 100% !important;
+  }
+
   .slide-controls {
     flex-wrap: wrap;
     justify-content: flex-start;

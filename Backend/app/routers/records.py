@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..cache import get_cached_json, invalidate_all_cache, make_cache_key, set_cached_json
 from ..database import get_connection, log_operation, to_dict, to_list
 from ..deps import require_roles
 from ..schemas import (
@@ -31,6 +32,11 @@ def get_patient_record(
     patient_id: int,
     user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk")),
 ):
+    cache_key = make_cache_key("patients", "record", patient_id, user["role"], user["id"])
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         patient = conn.execute(
             """
@@ -40,9 +46,12 @@ def get_patient_record(
               p.age,
               p.gender,
               p.uhid,
-              d.full_name AS doctor_assigned
+                            d.full_name AS doctor_assigned,
+                            p.medcare_nurse_id,
+                            n.full_name AS medcare_nurse_name
             FROM patients p
             JOIN users d ON d.id = p.assigned_doctor_id
+                        LEFT JOIN users n ON n.id = p.medcare_nurse_id
             WHERE p.id = ?
             """,
             (patient_id,),
@@ -161,7 +170,7 @@ def get_patient_record(
         if row["physical_findings"]:
             physical_findings.append(row["physical_findings"])
 
-    return {
+    data = {
         "patient": {
             "id": patient_data["id"],
             "fullName": patient_data["full_name"],
@@ -169,6 +178,12 @@ def get_patient_record(
             "gender": patient_data["gender"],
             "uhid": patient_data["uhid"],
             "doctorAssigned": patient_data["doctor_assigned"],
+            "medcareNurse": {
+                "id": patient_data["medcare_nurse_id"],
+                "fullName": patient_data["medcare_nurse_name"],
+            }
+            if patient_data["medcare_nurse_id"]
+            else None,
         },
         "record": {
             "chiefComplaint": clinical_data["chief_complaint"],
@@ -226,6 +241,8 @@ def get_patient_record(
             ],
         },
     }
+    set_cached_json(cache_key, data, ttl_seconds=12)
+    return data
 
 
 @router.put("/{patient_id}/record")
@@ -234,6 +251,14 @@ def update_patient_record(
     payload: ClinicalRecordUpdate,
     user=Depends(require_roles("Doctor", "Nurse", "registration_desk")),
 ):
+    if user["role"] == "Nurse" and (
+        payload.past_medical_history is not None or payload.social_family_history is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nurses can update column-1/2 data, but column-3 medical history fields are doctor-only.",
+        )
+
     with get_connection() as conn:
         if not _patient_exists(conn, patient_id):
             raise HTTPException(status_code=404, detail="Patient not found")
@@ -297,6 +322,7 @@ def update_patient_record(
             str(patient_id),
             "Updated clinical record",
         )
+    invalidate_all_cache()
     return {"ok": True}
 
 
@@ -334,6 +360,7 @@ def add_vitals(
             str(vitals_id),
             "Added vitals entry",
         )
+    invalidate_all_cache()
     return {"ok": True, "id": vitals_id}
 
 
@@ -362,6 +389,7 @@ def create_lab_order(
             str(lab_order_id),
             "Created lab order",
         )
+    invalidate_all_cache()
     return {"ok": True, "id": lab_order_id}
 
 
@@ -396,6 +424,7 @@ def add_lab_result(
             str(result_id),
             "Added lab result",
         )
+    invalidate_all_cache()
     return {"ok": True, "id": result_id}
 
 
@@ -424,6 +453,7 @@ def create_imaging_order(
             str(imaging_order_id),
             "Created imaging order",
         )
+    invalidate_all_cache()
     return {"ok": True, "id": imaging_order_id}
 
 
@@ -458,6 +488,7 @@ def add_imaging_report(
             str(report_id),
             "Added imaging report",
         )
+    invalidate_all_cache()
     return {"ok": True, "id": report_id}
 
 
@@ -486,4 +517,5 @@ def add_charge(
             str(charge_id),
             f"Captured charge {payload.item}",
         )
+    invalidate_all_cache()
     return {"ok": True, "id": charge_id}

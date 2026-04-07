@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('Doctor', 'Nurse', 'Administrator', 'registration_desk')),
+  approval_status TEXT NOT NULL DEFAULT 'Approved' CHECK (approval_status IN ('Pending', 'Approved', 'Rejected')),
+  shift_slot TEXT DEFAULT NULL CHECK (shift_slot IN ('2-10', '10-18', '18-2') OR shift_slot IS NULL),
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -72,9 +74,11 @@ CREATE TABLE IF NOT EXISTS patients (
   age INTEGER NOT NULL CHECK (age > 0),
   gender TEXT NOT NULL,
   assigned_doctor_id INTEGER NOT NULL,
+    medcare_nurse_id INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (assigned_doctor_id) REFERENCES users(id)
+    FOREIGN KEY (assigned_doctor_id) REFERENCES users(id),
+    FOREIGN KEY (medcare_nurse_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS appointments (
@@ -310,6 +314,8 @@ def log_operation(
 def init_db() -> None:
     with get_connection() as conn:
         conn.executescript(SCHEMA_SQL)
+        _ensure_schema_columns(conn)
+        _ensure_indexes(conn)
 
         user_count = conn.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"]
         if user_count > 0:
@@ -406,3 +412,67 @@ def init_db() -> None:
             """,
             (patient_ids[0], "Consultation Fee", 800),
         )
+
+
+def _column_exists(conn: Any, table_name: str, column_name: str) -> bool:
+    if USE_POSTGRES:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = ? AND column_name = ?
+            """,
+            (table_name, column_name),
+        ).fetchone()
+        return row is not None
+
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return any(str(row[1]) == column_name for row in rows)
+
+
+def _ensure_schema_columns(conn: Any) -> None:
+    if not _column_exists(conn, "patients", "medcare_nurse_id"):
+        conn.execute("ALTER TABLE patients ADD COLUMN medcare_nurse_id INTEGER")
+    if not _column_exists(conn, "users", "approval_status"):
+        conn.execute("ALTER TABLE users ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'Approved'")
+    if not _column_exists(conn, "users", "shift_slot"):
+        conn.execute("ALTER TABLE users ADD COLUMN shift_slot TEXT DEFAULT NULL")
+    conn.execute(
+        """
+        UPDATE users
+        SET approval_status = CASE
+            WHEN approval_status IN ('Pending', 'Approved', 'Rejected') THEN approval_status
+            ELSE 'Approved'
+        END
+        """
+    )
+    conn.execute(
+        """
+        UPDATE users
+        SET shift_slot = NULL
+        WHERE shift_slot NOT IN ('2-10', '10-18', '18-2')
+        """
+    )
+
+
+def _ensure_indexes(conn: Any) -> None:
+    statements = [
+        "CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active)",
+        "CREATE INDEX IF NOT EXISTS idx_users_approval_status ON users(approval_status)",
+        "CREATE INDEX IF NOT EXISTS idx_users_shift_slot ON users(shift_slot)",
+        "CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email))",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+        "CREATE INDEX IF NOT EXISTS idx_patients_full_name_lower ON patients(LOWER(full_name))",
+        "CREATE INDEX IF NOT EXISTS idx_patients_uhid_lower ON patients(LOWER(uhid))",
+        "CREATE INDEX IF NOT EXISTS idx_patients_assigned_doctor_id ON patients(assigned_doctor_id)",
+        "CREATE INDEX IF NOT EXISTS idx_patients_medcare_nurse_id ON patients(medcare_nurse_id)",
+        "CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)",
+        "CREATE INDEX IF NOT EXISTS idx_appointments_date_doctor ON appointments(appointment_date, doctor_id)",
+        "CREATE INDEX IF NOT EXISTS idx_appointments_patient_id ON appointments(patient_id)",
+        "CREATE INDEX IF NOT EXISTS idx_vitals_patient_recorded ON vitals(patient_id, recorded_at)",
+        "CREATE INDEX IF NOT EXISTS idx_operation_logs_created ON operation_logs(created_at)",
+    ]
+
+    for stmt in statements:
+        conn.execute(stmt)

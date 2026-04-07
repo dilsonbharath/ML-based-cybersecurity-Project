@@ -2,6 +2,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 
+from ..cache import get_cached_json, make_cache_key, set_cached_json
 from ..database import get_connection, to_list
 from ..deps import require_roles
 
@@ -11,6 +12,11 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @router.get("/nurse")
 def nurse_snapshot(user=Depends(require_roles("Doctor", "Nurse", "Administrator", "registration_desk"))):
     today = date.today().isoformat()
+    cache_key = make_cache_key("dashboard", "nurse", today)
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT status FROM appointments WHERE appointment_date = ?",
@@ -19,15 +25,22 @@ def nurse_snapshot(user=Depends(require_roles("Doctor", "Nurse", "Administrator"
 
     statuses = [row["status"] for row in rows]
     pending = len([status for status in statuses if status != "Completed"])
-    return {
+    data = {
         "todayPatients": len(statuses),
         "pendingTasks": pending,
     }
+    set_cached_json(cache_key, data, ttl_seconds=8)
+    return data
 
 
 @router.get("/admin")
 def admin_snapshot(user=Depends(require_roles("Administrator"))):
     today = date.today().isoformat()
+    cache_key = make_cache_key("dashboard", "admin", today)
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT status FROM appointments WHERE appointment_date = ?",
@@ -35,10 +48,12 @@ def admin_snapshot(user=Depends(require_roles("Administrator"))):
         ).fetchall()
     statuses = [row["status"] for row in rows]
     completed = len([status for status in statuses if status == "Completed"])
-    return {
+    data = {
         "todaysFootfall": len(statuses),
         "consultationsCompleted": completed,
     }
+    set_cached_json(cache_key, data, ttl_seconds=8)
+    return data
 
 
 @router.get("/operations")

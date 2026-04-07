@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import PublicFooter from "../components/layout/PublicFooter";
 
 export default function LandingPage({ user }) {
-  const CROSSFADE_MS = 520;
   const slides = [
     {
       id: "transforming-health",
@@ -34,124 +32,68 @@ export default function LandingPage({ user }) {
     }
   ];
 
-  const [activeSlide, setActiveSlide] = useState(0);
-  const [previousSlide, setPreviousSlide] = useState(null);
-
-  function changeSlide(nextIndex) {
-    if (nextIndex === activeSlide) {
-      return;
-    }
-    setPreviousSlide(activeSlide);
-    setActiveSlide(nextIndex);
-  }
-
-  useEffect(() => {
-    const timerId = setInterval(() => {
-      changeSlide((activeSlide + 1) % slides.length);
-    }, 6000);
-
-    return () => clearInterval(timerId);
-  }, [activeSlide, slides.length]);
-
-  useEffect(() => {
-    if (previousSlide === null) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setPreviousSlide(null);
-    }, CROSSFADE_MS);
-
-    return () => clearTimeout(timeoutId);
-  }, [previousSlide]);
-
-  const current = slides[activeSlide];
-
-  function goPrevious() {
-    changeSlide((activeSlide - 1 + slides.length) % slides.length);
-  }
-
-  function goNext() {
-    changeSlide((activeSlide + 1) % slides.length);
-  }
-
   return (
-    <main className="page-shell">
-      <section className="home-slider" aria-label="Homepage highlights">
-        <div className="slider-top-row">
-          <p className="eyebrow">Electronic Health Records Platform</p>
-          <p className="slider-counter">
-            {activeSlide + 1} / {slides.length}
-          </p>
-        </div>
-
-        <div className="slide-stage" key={current.id}>
-          <div className={`slide-copy ${previousSlide !== null ? "entering" : ""}`}>
-            <p className="slide-kicker">{current.eyebrow}</p>
-            <h1>{current.title}</h1>
-            <p>{current.description}</p>
-
-            <div className="actions">
-              {!user && (
-                <>
-                  <Link className="btn primary" to="/signup">
-                    Create Staff Account
-                  </Link>
-                  <Link className="btn subtle" to="/signin">
-                    Sign In
-                  </Link>
-                </>
-              )}
-              {user && (
-                <Link className="btn primary" to="/portal">
-                  Open Clinical Portal
-                </Link>
+    <main className="landing-full-page">
+      <div className="landing-full-stack">
+        {slides.map((slide, index) => (
+          <section className="landing-full-slide" key={slide.id}>
+            <div className="landing-full-overlay">
+              <p className="slide-kicker">
+                {slide.eyebrow} - {index + 1}/{slides.length}
+              </p>
+              <h1>{slide.title}</h1>
+              <p>{slide.description}</p>
+              {index === 0 && (
+                <div className="actions">
+                  {!user && (
+                    <>
+                      <Link className="btn primary" to="/signup">
+                        Create Staff Account
+                      </Link>
+                      <Link className="btn subtle" to="/signin">
+                        Sign In
+                      </Link>
+                    </>
+                  )}
+                  {user && (
+                    <Link className="btn primary" to="/portal">
+                      Open Clinical Portal
+                    </Link>
+                  )}
+                </div>
               )}
             </div>
-          </div>
+            <img alt={slide.title} className="landing-full-image" src={slide.image} />
+          </section>
+        ))}
+      </div>
 
-          <div className="slide-media">
-            {previousSlide !== null && (
-              <img
-                alt={slides[previousSlide].title}
-                className="slide-image previous"
-                src={slides[previousSlide].image}
-              />
-            )}
-            <img
-              alt={current.title}
-              className={`slide-image current ${previousSlide !== null ? "entering" : ""}`}
-              src={current.image}
-            />
-          </div>
-        </div>
-
-        <div className="slide-controls" aria-label="Slide controls">
-          <button className="slide-nav" onClick={goPrevious} type="button">
-            Previous
-          </button>
-
-          <div className="slide-dots" role="tablist" aria-label="Homepage slides">
-            {slides.map((slide, index) => (
-              <button
-                aria-label={`Go to slide ${index + 1}`}
-                aria-selected={index === activeSlide}
-                className={`slide-dot ${index === activeSlide ? "active" : ""}`}
-                key={slide.id}
-                onClick={() => changeSlide(index)}
-                role="tab"
-                type="button"
-              />
-            ))}
-          </div>
-
-          <button className="slide-nav" onClick={goNext} type="button">
-            Next
-          </button>
-        </div>
+      <section className="page-shell">
+        <section className="landing-feature-showcase" aria-label="Platform highlights">
+          <article className="landing-feature-card">
+            <h3>Secure Authentication</h3>
+            <p>
+              New users sign up once, wait for administrator approval, then access role-specific tools with
+              protected sessions.
+            </p>
+          </article>
+          <article className="landing-feature-card">
+            <h3>Faster OP Flow</h3>
+            <p>
+              Registration desk staff can create appointments quickly with shift-filtered doctor and nurse
+              assignment.
+            </p>
+          </article>
+          <article className="landing-feature-card">
+            <h3>Clinical Visibility</h3>
+            <p>
+              Teams get a clear split between active patients and historical records while preserving care
+              continuity.
+            </p>
+          </article>
+        </section>
+        <PublicFooter />
       </section>
-
-      <PublicFooter />
     </main>
   );
 }

@@ -17,7 +17,7 @@ export default function SignUpPage({ user }) {
     }
     navigate("/signin", {
       replace: true,
-      state: { notice: "Signup completed. Please sign in." }
+      state: { notice: "Signup request submitted. Wait for administrator approval before signing in." }
     });
     return { ok: true };
   }
