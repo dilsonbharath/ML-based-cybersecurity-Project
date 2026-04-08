@@ -2,7 +2,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..database import get_connection, log_operation, to_dict
+from ..database import build_user_code, get_connection, log_operation, to_dict
 from ..deps import get_current_user
 from ..schemas import AuthResponse, SignInRequest, SignUpRequest
 from ..security import create_token, hash_password, token_expiry, verify_password
@@ -47,6 +47,10 @@ def signup(payload: SignUpRequest):
             (payload.full_name.strip(), email, hash_password(payload.password), payload.role),
         )
         user_id = int(cursor.lastrowid)
+        conn.execute(
+            "UPDATE users SET user_code = ? WHERE id = ?",
+            (build_user_code(user_id), user_id),
+        )
         log_operation(conn, user_id, "signup", "users", str(user_id), "New account created")
 
     return {"ok": True, "message": "Signup request submitted. Please wait for admin approval."}
@@ -58,7 +62,7 @@ def signin(payload: SignInRequest):
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, full_name, email, role, password_hash, approval_status, shift_slot
+            SELECT id, user_code, full_name, email, role, password_hash, approval_status, shift_slot
             FROM users
             WHERE LOWER(email) = ? AND is_active = 1
             """,
@@ -85,6 +89,7 @@ def signin(payload: SignInRequest):
 
     user = {
         "id": row["id"],
+        "user_code": row["user_code"],
         "full_name": row["full_name"],
         "email": row["email"],
         "role": row["role"],
@@ -106,7 +111,7 @@ def logout(user=Depends(get_current_user)):
 def me(user=Depends(get_current_user)):
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, full_name, email, role, approval_status, shift_slot FROM users WHERE id = ?",
+            "SELECT id, user_code, full_name, email, role, approval_status, shift_slot FROM users WHERE id = ?",
             (user["id"],),
         ).fetchone()
     data = to_dict(row)

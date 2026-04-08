@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('Doctor', 'Nurse', 'Administrator', 'registration_desk')),
+  user_code TEXT UNIQUE,
+  approval_status TEXT NOT NULL DEFAULT 'Approved' CHECK (approval_status IN ('Pending', 'Approved', 'Rejected')),
+  shift_slot TEXT DEFAULT NULL CHECK (shift_slot IN ('2-10', '10-18', '18-2') OR shift_slot IS NULL),
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text)
 );
@@ -26,9 +29,11 @@ CREATE TABLE IF NOT EXISTS patients (
   age INTEGER NOT NULL CHECK (age > 0),
   gender TEXT NOT NULL,
   assigned_doctor_id INTEGER NOT NULL,
+  medcare_nurse_id INTEGER,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
   updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
-  FOREIGN KEY (assigned_doctor_id) REFERENCES users(id)
+  FOREIGN KEY (assigned_doctor_id) REFERENCES users(id),
+  FOREIGN KEY (medcare_nurse_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS appointments (
@@ -126,5 +131,24 @@ CREATE TABLE IF NOT EXISTS operation_logs (
   entity_id TEXT NOT NULL,
   details TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS security_alerts (
+  id SERIAL PRIMARY KEY,
+  log_id INTEGER NOT NULL UNIQUE,
+  user_id INTEGER,
+  user_code TEXT,
+  role TEXT,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  details TEXT NOT NULL DEFAULT '',
+  risk_score DOUBLE PRECISION NOT NULL,
+  risk_band TEXT NOT NULL CHECK (risk_band IN ('normal', 'suspicious', 'anomaly')),
+  reason_codes TEXT NOT NULL DEFAULT '',
+  event_time TEXT NOT NULL,
+  scored_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
+  FOREIGN KEY (log_id) REFERENCES operation_logs(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );

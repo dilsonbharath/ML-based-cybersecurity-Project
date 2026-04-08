@@ -11,6 +11,7 @@ ShiftSlotType = Literal["2-10", "10-18", "18-2"]
 
 class UserOut(BaseModel):
     id: int
+    user_code: str
     full_name: str
     email: str
     role: RoleType

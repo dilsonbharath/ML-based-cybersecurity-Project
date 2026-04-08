@@ -59,7 +59,8 @@ function createSeedDatabase() {
       imagingOrder: 1,
       imagingReport: 1,
       charge: 2,
-      operation: 1
+      operation: 1,
+      securityAlert: 1
     },
     users: [
       {
@@ -219,7 +220,8 @@ function createSeedDatabase() {
         status: "In Consultation"
       }
     ],
-    operation_logs: []
+    operation_logs: [],
+    security_alerts: []
   };
 }
 
@@ -342,6 +344,152 @@ function logOperation(db, userId, action, entityType, entityId, details) {
     details,
     created_at: nowStamp()
   });
+}
+
+function parseDbDateTime(value) {
+  if (!value) {
+    return new Date();
+  }
+  const normalized = String(value).replace(" ", "T") + "Z";
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+  return parsed;
+}
+
+function isInShift(shiftSlot, hour) {
+  if (shiftSlot === "2-10") {
+    return hour >= 2 && hour < 10;
+  }
+  if (shiftSlot === "10-18") {
+    return hour >= 10 && hour < 18;
+  }
+  if (shiftSlot === "18-2") {
+    return hour >= 18 || hour < 2;
+  }
+  return true;
+}
+
+function bandFromScore(score) {
+  if (score >= 70) {
+    return "anomaly";
+  }
+  if (score >= 40) {
+    return "suspicious";
+  }
+  return "normal";
+}
+
+function scoreMockSecurityEvent(logRow, actor) {
+  let score = 12;
+  const reasons = [];
+  const action = (logRow.action || "").toLowerCase();
+  const entityType = (logRow.entity_type || "").toLowerCase();
+  const details = (logRow.details || "").toLowerCase();
+
+  const isReadLike = action === "read" || action === "list" || action === "search";
+  const isWriteLike = action === "create" || action === "update" || action === "delete" || action === "patch";
+  const isClinicalEntity = ["patient_record", "lab_results", "imaging_reports", "vitals"].includes(entityType);
+
+  if (isReadLike) {
+    score += 12;
+  }
+  if (isWriteLike) {
+    score += 6;
+  }
+  if (action === "denied" || action === "forbidden") {
+    score += 38;
+    reasons.push("repeated_denied_access");
+  }
+
+  if (isClinicalEntity) {
+    score += 15;
+    reasons.push("clinical_record_access");
+  }
+
+  const eventTime = parseDbDateTime(logRow.created_at);
+  const inShift = isInShift(actor?.shift_slot, eventTime.getUTCHours());
+  if (!inShift && (isReadLike || isWriteLike)) {
+    score += 24;
+    reasons.push("off_shift_record_access");
+  }
+
+  if ((actor?.role || "") === "registration_desk" && isClinicalEntity && isReadLike) {
+    score += 30;
+    reasons.push("regdesk_deep_clinical_reads");
+  }
+
+  if ((actor?.role || "") === "Nurse" && isClinicalEntity && details.includes("unassigned")) {
+    score += 26;
+    reasons.push("nurse_unassigned_access_pattern");
+  }
+
+  if (entityType === "security_alerts") {
+    score = 0;
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const riskBand = bandFromScore(score);
+
+  if (!reasons.length) {
+    reasons.push("baseline_pattern");
+  }
+
+  return {
+    risk_score: score,
+    risk_band: riskBand,
+    reason_codes: reasons.join("|")
+  };
+}
+
+function refreshMockSecurityAlerts(db, lookbackHours = 24, limit = 300) {
+  const existingLogIds = new Set(db.security_alerts.map((row) => row.log_id));
+  const cutoff = Date.now() - lookbackHours * 60 * 60 * 1000;
+
+  const candidates = db.operation_logs
+    .slice()
+    .sort((a, b) => b.id - a.id)
+    .filter((row) => !existingLogIds.has(row.id))
+    .filter((row) => row.entity_type !== "security_alerts")
+    .filter((row) => parseDbDateTime(row.created_at).getTime() >= cutoff)
+    .slice(0, limit)
+    .reverse();
+
+  const persisted = [];
+  candidates.forEach((logRow) => {
+    const actor = db.users.find((row) => row.id === logRow.user_id) || null;
+    const scored = scoreMockSecurityEvent(logRow, actor);
+    const alertRow = {
+      id: nextId(db, "securityAlert"),
+      log_id: logRow.id,
+      user_id: logRow.user_id,
+      user_code: actor ? `USR-${String(actor.id).padStart(6, "0")}` : null,
+      user_name: actor?.full_name || "System",
+      role: actor?.role || "Unknown",
+      action: logRow.action,
+      entity_type: logRow.entity_type,
+      entity_id: logRow.entity_id,
+      details: logRow.details,
+      risk_score: scored.risk_score,
+      risk_band: scored.risk_band,
+      reason_codes: scored.reason_codes,
+      event_time: parseDbDateTime(logRow.created_at).toISOString(),
+      scored_at: nowStamp()
+    };
+    db.security_alerts.push(alertRow);
+    persisted.push(alertRow);
+  });
+
+  const high = persisted.filter((row) => row.risk_band === "anomaly").length;
+  const medium = persisted.filter((row) => row.risk_band === "suspicious").length;
+  return {
+    ok: true,
+    scored: persisted.length,
+    high,
+    medium,
+    alerts: persisted.filter((row) => row.risk_band !== "normal").slice(0, 25)
+  };
 }
 
 function mapPatientRow(db, patient) {
@@ -1130,6 +1278,94 @@ async function mockApiRequest(path, options = {}) {
       });
   }
 
+  if (pathname === "/dashboard/security/refresh" && method === "POST") {
+    const { db, user } = getSessionPrincipal(["Administrator"]);
+    const lookbackHoursRaw = Number(searchParams.get("lookback_hours") || 24);
+    const limitRaw = Number(searchParams.get("limit") || 300);
+    const lookbackHours = Number.isFinite(lookbackHoursRaw)
+      ? Math.max(1, Math.min(168, lookbackHoursRaw))
+      : 24;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, limitRaw)) : 300;
+    const result = refreshMockSecurityAlerts(db, lookbackHours, limit);
+    logOperation(db, user.id, "refresh", "security_alerts", "batch", `Scored ${result.scored} logs`);
+    writeMockDb(db);
+    return result;
+  }
+
+  if (pathname === "/dashboard/security/alerts" && method === "GET") {
+    const { db, user } = getSessionPrincipal(["Administrator"]);
+    const rawLimit = Number(searchParams.get("limit") || 80);
+    const lookbackDaysRaw = Number(searchParams.get("lookback_days") || 30);
+    const riskBand = (searchParams.get("risk_band") || "").trim().toLowerCase();
+    const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(400, rawLimit)) : 80;
+    const lookbackDays = Number.isFinite(lookbackDaysRaw)
+      ? Math.max(1, Math.min(90, lookbackDaysRaw))
+      : 30;
+    const cutoff = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
+
+    const rows = db.security_alerts
+      .slice()
+      .sort((a, b) => b.id - a.id)
+      .filter((row) => (riskBand ? row.risk_band === riskBand : true))
+      .filter((row) => parseDbDateTime(row.event_time).getTime() >= cutoff)
+      .slice(0, limit);
+
+    logOperation(
+      db,
+      user.id,
+      "read",
+      "security_alerts",
+      "list",
+      `Viewed security alerts (${riskBand || "all"})`
+    );
+    writeMockDb(db);
+    return rows;
+  }
+
+  if (pathname === "/dashboard/security/summary" && method === "GET") {
+    const { db, user } = getSessionPrincipal(["Administrator"]);
+    const lookbackDaysRaw = Number(searchParams.get("lookback_days") || 30);
+    const lookbackDays = Number.isFinite(lookbackDaysRaw)
+      ? Math.max(1, Math.min(90, lookbackDaysRaw))
+      : 30;
+    const cutoff = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
+
+    const scoped = db.security_alerts.filter(
+      (row) => parseDbDateTime(row.event_time).getTime() >= cutoff
+    );
+    const high = scoped.filter((row) => row.risk_band === "anomaly").length;
+    const medium = scoped.filter((row) => row.risk_band === "suspicious").length;
+    const roleMap = new Map();
+
+    scoped.forEach((row) => {
+      const key = row.role || "Unknown";
+      if (!roleMap.has(key)) {
+        roleMap.set(key, { role: key, high: 0, medium: 0, total: 0 });
+      }
+      const bucket = roleMap.get(key);
+      if (row.risk_band === "anomaly") {
+        bucket.high += 1;
+      }
+      if (row.risk_band === "suspicious") {
+        bucket.medium += 1;
+      }
+      bucket.total += row.risk_band === "normal" ? 0 : 1;
+    });
+
+    logOperation(db, user.id, "read", "security_alerts", "summary", "Viewed security summary");
+    writeMockDb(db);
+    return {
+      lookback_days: lookbackDays,
+      total_scored: scoped.length,
+      high_risk: high,
+      medium_risk: medium,
+      role_breakdown: Array.from(roleMap.values()).sort((a, b) =>
+        String(a.role).localeCompare(String(b.role))
+      ),
+      ml_service: { ok: true, service: "mock" }
+    };
+  }
+
   throw new Error(`Mock endpoint not implemented: ${method} ${pathname}`);
 }
 
@@ -1440,4 +1676,25 @@ export async function getAdminSnapshot() {
 
 export async function getRecentOperations(limit = 20) {
   return apiRequest(`/dashboard/operations?limit=${limit}`);
+}
+
+export async function refreshSecurityAlerts({ lookbackHours = 24, limit = 300 } = {}) {
+  const query = `?lookback_hours=${encodeURIComponent(lookbackHours)}&limit=${encodeURIComponent(limit)}`;
+  return apiRequest(`/dashboard/security/refresh${query}`, {
+    method: "POST"
+  });
+}
+
+export async function getSecurityAlerts({ riskBand = "", limit = 80, lookbackDays = 30 } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("lookback_days", String(lookbackDays));
+  if (riskBand) {
+    params.set("risk_band", riskBand);
+  }
+  return apiRequest(`/dashboard/security/alerts?${params.toString()}`);
+}
+
+export async function getSecuritySummary(lookbackDays = 30) {
+  return apiRequest(`/dashboard/security/summary?lookback_days=${encodeURIComponent(lookbackDays)}`);
 }

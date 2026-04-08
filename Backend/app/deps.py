@@ -26,6 +26,7 @@ def get_current_user(authorization: str | None = Header(default=None)):
             """
             SELECT
               u.id,
+                            u.user_code,
               u.full_name,
               u.email,
               u.role,
@@ -44,6 +45,7 @@ def get_current_user(authorization: str | None = Header(default=None)):
 
     return {
         "id": row["id"],
+        "user_code": row["user_code"],
         "full_name": row["full_name"],
         "email": row["email"],
         "role": row["role"],

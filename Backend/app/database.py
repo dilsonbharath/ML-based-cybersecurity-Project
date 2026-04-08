@@ -43,6 +43,10 @@ IntegrityError = PostgresIntegrityError if USE_POSTGRES else sqlite3.IntegrityEr
 
 STATUS_SET = {"Scheduled", "Checked In", "In Consultation", "Completed"}
 
+
+def build_user_code(user_id: int) -> str:
+    return f"USR-{user_id:06d}"
+
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
 
@@ -52,6 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('Doctor', 'Nurse', 'Administrator', 'registration_desk')),
+    user_code TEXT UNIQUE,
   approval_status TEXT NOT NULL DEFAULT 'Approved' CHECK (approval_status IN ('Pending', 'Approved', 'Rejected')),
   shift_slot TEXT DEFAULT NULL CHECK (shift_slot IN ('2-10', '10-18', '18-2') OR shift_slot IS NULL),
   is_active INTEGER NOT NULL DEFAULT 1,
@@ -177,6 +182,25 @@ CREATE TABLE IF NOT EXISTS operation_logs (
   details TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS security_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    log_id INTEGER NOT NULL UNIQUE,
+    user_id INTEGER,
+    user_code TEXT,
+    role TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    risk_score REAL NOT NULL,
+    risk_band TEXT NOT NULL CHECK (risk_band IN ('normal', 'suspicious', 'anomaly')),
+    reason_codes TEXT NOT NULL DEFAULT '',
+    event_time TEXT NOT NULL,
+    scored_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (log_id) REFERENCES operation_logs(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 """
 
@@ -327,12 +351,17 @@ def init_db() -> None:
             ("Admin Ravi Kumar", "admin.ravi@bloom.health", "Admin@123", "Administrator"),
         ]
         for full_name, email, password, role in users:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO users (full_name, email, password_hash, role)
                 VALUES (?, ?, ?, ?)
                 """,
                 (full_name, email.lower(), hash_password(password), role),
+            )
+            user_id = int(cursor.lastrowid)
+            conn.execute(
+                "UPDATE users SET user_code = ? WHERE id = ?",
+                (build_user_code(user_id), user_id),
             )
 
         doctor_id = conn.execute(
@@ -437,6 +466,8 @@ def _ensure_schema_columns(conn: Any) -> None:
         conn.execute("ALTER TABLE users ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'Approved'")
     if not _column_exists(conn, "users", "shift_slot"):
         conn.execute("ALTER TABLE users ADD COLUMN shift_slot TEXT DEFAULT NULL")
+    if not _column_exists(conn, "users", "user_code"):
+        conn.execute("ALTER TABLE users ADD COLUMN user_code TEXT")
     conn.execute(
         """
         UPDATE users
@@ -453,11 +484,23 @@ def _ensure_schema_columns(conn: Any) -> None:
         WHERE shift_slot NOT IN ('2-10', '10-18', '18-2')
         """
     )
+    _refresh_user_codes(conn)
+
+
+def _refresh_user_codes(conn: Any) -> None:
+    rows = conn.execute("SELECT id FROM users").fetchall()
+    for row in rows:
+        user_id = int(row["id"])
+        conn.execute(
+            "UPDATE users SET user_code = ? WHERE id = ?",
+            (build_user_code(user_id), user_id),
+        )
 
 
 def _ensure_indexes(conn: Any) -> None:
     statements = [
         "CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_code_unique ON users(user_code)",
         "CREATE INDEX IF NOT EXISTS idx_users_approval_status ON users(approval_status)",
         "CREATE INDEX IF NOT EXISTS idx_users_shift_slot ON users(shift_slot)",
         "CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email))",
@@ -472,6 +515,10 @@ def _ensure_indexes(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_appointments_patient_id ON appointments(patient_id)",
         "CREATE INDEX IF NOT EXISTS idx_vitals_patient_recorded ON vitals(patient_id, recorded_at)",
         "CREATE INDEX IF NOT EXISTS idx_operation_logs_created ON operation_logs(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_operation_logs_user_created ON operation_logs(user_id, created_at)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_security_alerts_log_id ON security_alerts(log_id)",
+        "CREATE INDEX IF NOT EXISTS idx_security_alerts_band_scored ON security_alerts(risk_band, scored_at)",
+        "CREATE INDEX IF NOT EXISTS idx_security_alerts_user_scored ON security_alerts(user_id, scored_at)",
     ]
 
     for stmt in statements:

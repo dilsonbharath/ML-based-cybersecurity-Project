@@ -39,6 +39,15 @@ def list_patients(
     cache_key = make_cache_key("patients", "list", user["role"], user["id"], normalized_search)
     cached = get_cached_json(cache_key)
     if cached is not None:
+        with get_connection() as conn:
+            log_operation(
+                conn,
+                user["id"],
+                "list",
+                "patients",
+                "cached",
+                f"Listed patients (cached, search={normalized_search or 'none'})",
+            )
         return cached
 
     with get_connection() as conn:
@@ -83,9 +92,17 @@ def list_patients(
                 ORDER BY p.full_name
                 """
             ).fetchall()
-            data = to_list(rows)
-            set_cached_json(cache_key, data, ttl_seconds=10)
-            return data
+        data = to_list(rows)
+        log_operation(
+            conn,
+            user["id"],
+            "list",
+            "patients",
+            "all",
+            f"Listed patients (search={normalized_search or 'none'})",
+        )
+    set_cached_json(cache_key, data, ttl_seconds=10)
+    return data
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

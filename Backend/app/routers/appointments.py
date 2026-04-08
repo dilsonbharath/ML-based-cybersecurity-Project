@@ -17,6 +17,15 @@ def list_appointments(
     cache_key = make_cache_key("appointments", "all", user["role"], user["id"])
     cached = get_cached_json(cache_key)
     if cached is not None:
+        with get_connection() as conn:
+            log_operation(
+                conn,
+                user["id"],
+                "list",
+                "appointments",
+                "cached-all",
+                "Viewed appointment list (cached)",
+            )
         return cached
 
     with get_connection() as conn:
@@ -36,6 +45,14 @@ def list_appointments(
             ORDER BY a.appointment_date DESC, a.appointment_time
             """
         ).fetchall()
+        log_operation(
+            conn,
+            user["id"],
+            "list",
+            "appointments",
+            "all",
+            "Viewed appointment list",
+        )
 
     data = []
     for row in rows:
@@ -60,6 +77,15 @@ def todays_appointments(
     cache_key = make_cache_key("appointments", "today", today, user["role"], user["id"])
     cached = get_cached_json(cache_key)
     if cached is not None:
+        with get_connection() as conn:
+            log_operation(
+                conn,
+                user["id"],
+                "list",
+                "appointments",
+                "cached-today",
+                "Viewed today's appointments (cached)",
+            )
         return cached
 
     with get_connection() as conn:
@@ -101,6 +127,14 @@ def todays_appointments(
                 """,
                 (today,),
             ).fetchall()
+        log_operation(
+            conn,
+            user["id"],
+            "list",
+            "appointments",
+            "today",
+            "Viewed today's appointments",
+        )
 
     data = []
     for row in rows:

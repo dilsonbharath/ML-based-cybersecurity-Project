@@ -22,13 +22,22 @@ def get_doctors(
     cache_key = make_cache_key("users", "doctors", normalized_shift or "all")
     cached = get_cached_json(cache_key)
     if cached is not None:
+        with get_connection() as conn:
+            log_operation(
+                conn,
+                user["id"],
+                "list",
+                "users_doctors",
+                normalized_shift or "all",
+                "Viewed doctors list (cached)",
+            )
         return cached
 
     with get_connection() as conn:
         if normalized_shift:
             rows = conn.execute(
                 """
-                SELECT id, full_name, email, shift_slot
+                SELECT id, user_code, full_name, email, shift_slot
                 FROM users
                 WHERE role = 'Doctor' AND is_active = 1 AND approval_status = 'Approved' AND shift_slot = ?
                 ORDER BY full_name
@@ -38,12 +47,20 @@ def get_doctors(
         else:
             rows = conn.execute(
                 """
-                SELECT id, full_name, email, shift_slot
+                SELECT id, user_code, full_name, email, shift_slot
                 FROM users
                 WHERE role = 'Doctor' AND is_active = 1 AND approval_status = 'Approved'
                 ORDER BY full_name
                 """
             ).fetchall()
+        log_operation(
+            conn,
+            user["id"],
+            "list",
+            "users_doctors",
+            normalized_shift or "all",
+            "Viewed doctors list",
+        )
     data = to_list(rows)
     set_cached_json(cache_key, data, ttl_seconds=60)
     return data
@@ -61,13 +78,22 @@ def get_nurses(
     cache_key = make_cache_key("users", "nurses", normalized_shift or "all")
     cached = get_cached_json(cache_key)
     if cached is not None:
+        with get_connection() as conn:
+            log_operation(
+                conn,
+                user["id"],
+                "list",
+                "users_nurses",
+                normalized_shift or "all",
+                "Viewed nurses list (cached)",
+            )
         return cached
 
     with get_connection() as conn:
         if normalized_shift:
             rows = conn.execute(
                 """
-                SELECT id, full_name, email, shift_slot
+                SELECT id, user_code, full_name, email, shift_slot
                 FROM users
                 WHERE role = 'Nurse' AND is_active = 1 AND approval_status = 'Approved' AND shift_slot = ?
                 ORDER BY full_name
@@ -77,12 +103,20 @@ def get_nurses(
         else:
             rows = conn.execute(
                 """
-                SELECT id, full_name, email, shift_slot
+                SELECT id, user_code, full_name, email, shift_slot
                 FROM users
                 WHERE role = 'Nurse' AND is_active = 1 AND approval_status = 'Approved'
                 ORDER BY full_name
                 """
             ).fetchall()
+        log_operation(
+            conn,
+            user["id"],
+            "list",
+            "users_nurses",
+            normalized_shift or "all",
+            "Viewed nurses list",
+        )
     data = to_list(rows)
     set_cached_json(cache_key, data, ttl_seconds=60)
     return data
@@ -93,6 +127,15 @@ def get_role_wise_users(user=Depends(require_roles("Administrator"))):
     cache_key = make_cache_key("users", "role-wise")
     cached = get_cached_json(cache_key)
     if cached is not None:
+        with get_connection() as conn:
+            log_operation(
+                conn,
+                user["id"],
+                "read",
+                "users",
+                "role-wise",
+                "Viewed role-wise users (cached)",
+            )
         return cached
 
     role_order = ["Doctor", "Nurse", "Administrator", "registration_desk"]
@@ -101,18 +144,27 @@ def get_role_wise_users(user=Depends(require_roles("Administrator"))):
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, full_name, email, role, approval_status, shift_slot
+            SELECT id, user_code, full_name, email, role, approval_status, shift_slot
             FROM users
             WHERE is_active = 1
             ORDER BY role, full_name
             """
         ).fetchall()
+        log_operation(
+            conn,
+            user["id"],
+            "read",
+            "users",
+            "role-wise",
+            "Viewed role-wise users",
+        )
 
     grouped: dict[str, list[dict]] = {}
     for row in to_list(rows):
         grouped.setdefault(row["role"], []).append(
             {
                 "id": row["id"],
+                "user_code": row["user_code"],
                 "full_name": row["full_name"],
                 "email": row["email"],
                 "approval_status": row["approval_status"],
@@ -138,12 +190,20 @@ def get_pending_approvals(user=Depends(require_roles("Administrator"))):
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, full_name, email, role, approval_status, shift_slot, created_at
+            SELECT id, user_code, full_name, email, role, approval_status, shift_slot, created_at
             FROM users
             WHERE is_active = 1 AND approval_status = 'Pending'
             ORDER BY created_at DESC
             """
         ).fetchall()
+        log_operation(
+            conn,
+            user["id"],
+            "read",
+            "users",
+            "pending-approvals",
+            "Viewed pending approvals",
+        )
     return to_list(rows)
 
 
@@ -221,7 +281,7 @@ def get_staff_by_shift(
     with get_connection() as conn:
         doctor_rows = conn.execute(
             """
-            SELECT id, full_name, email, shift_slot
+            SELECT id, user_code, full_name, email, shift_slot
             FROM users
             WHERE role = 'Doctor' AND is_active = 1 AND approval_status = 'Approved' AND shift_slot = ?
             ORDER BY full_name
@@ -230,11 +290,19 @@ def get_staff_by_shift(
         ).fetchall()
         nurse_rows = conn.execute(
             """
-            SELECT id, full_name, email, shift_slot
+            SELECT id, user_code, full_name, email, shift_slot
             FROM users
             WHERE role = 'Nurse' AND is_active = 1 AND approval_status = 'Approved' AND shift_slot = ?
             ORDER BY full_name
             """,
             (shift_slot,),
         ).fetchall()
+        log_operation(
+            conn,
+            user["id"],
+            "read",
+            "users",
+            shift_slot,
+            "Viewed staff by shift",
+        )
     return {"doctors": to_list(doctor_rows), "nurses": to_list(nurse_rows)}

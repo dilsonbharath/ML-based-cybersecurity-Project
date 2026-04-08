@@ -35,6 +35,15 @@ def get_patient_record(
     cache_key = make_cache_key("patients", "record", patient_id, user["role"], user["id"])
     cached = get_cached_json(cache_key)
     if cached is not None:
+        with get_connection() as conn:
+            log_operation(
+                conn,
+                user["id"],
+                "read",
+                "patient_record",
+                str(patient_id),
+                "Viewed patient record (cached)",
+            )
         return cached
 
     with get_connection() as conn:
@@ -241,6 +250,15 @@ def get_patient_record(
             ],
         },
     }
+    with get_connection() as conn:
+        log_operation(
+            conn,
+            user["id"],
+            "read",
+            "patient_record",
+            str(patient_id),
+            "Viewed patient record",
+        )
     set_cached_json(cache_key, data, ttl_seconds=12)
     return data
 

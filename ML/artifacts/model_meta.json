@@ -1,0 +1,223 @@
+{
+  "feature_columns": [
+    "role",
+    "shift_slot",
+    "hour_of_day",
+    "day_of_week",
+    "weekend_flag",
+    "in_shift_flag",
+    "offshift_access_ratio",
+    "total_requests_window",
+    "read_count",
+    "write_count",
+    "denied_count",
+    "unique_patients_accessed",
+    "patient_search_count",
+    "patient_record_read_count",
+    "appointment_linked_access_ratio",
+    "read_write_ratio",
+    "failed_auth_ratio",
+    "concurrent_session_count",
+    "ip_change_flag",
+    "user_agent_change_flag",
+    "nurse_unassigned_access_ratio",
+    "regdesk_clinical_read_ratio",
+    "role_hour_read_z",
+    "role_hour_unique_z",
+    "user_read_ratio",
+    "user_unique_ratio",
+    "user_denied_ratio",
+    "role_shift_offshift_gap"
+  ],
+  "categorical_columns": [
+    "role",
+    "shift_slot",
+    "day_of_week"
+  ],
+  "label_to_id": {
+    "normal": 0,
+    "suspicious": 1,
+    "anomaly": 2
+  },
+  "id_to_label": {
+    "0": "normal",
+    "1": "suspicious",
+    "2": "anomaly"
+  },
+  "score_weights": {
+    "rules": 0.5,
+    "catboost": 0.35,
+    "isolation_forest": 0.15
+  },
+  "risk_thresholds": {
+    "suspicious": 30.0,
+    "anomaly": 72.0
+  },
+  "tuning": {
+    "objective": "suspicious_recall_priority",
+    "trials_requested": 3,
+    "trials_run": 3,
+    "best_params": {
+      "catboost": {
+        "depth": 8,
+        "learning_rate": 0.11539739510684971,
+        "iterations": 505,
+        "l2_leaf_reg": 4.15270156526897,
+        "random_strength": 0.8157556533116788,
+        "border_count": 128
+      },
+      "isolation_forest": {
+        "n_estimators": 495,
+        "contamination": 0.15945707041371296,
+        "max_samples": "auto"
+      }
+    },
+    "best_validation": {
+      "objective": 0.7415684473412296,
+      "suspicious_recall": 0.5040322580645161,
+      "anomaly_precision": 0.9625,
+      "macro_f1": 0.8008266370797624,
+      "anomaly_pr_auc": 0.9456743323257928,
+      "suspicious_threshold": 30.0,
+      "anomaly_threshold": 72.0
+    },
+    "tuning_split_timestamp_utc": "2026-03-25T05:30:00Z",
+    "top_trials": [
+      {
+        "trial": 2,
+        "objective": 0.7415684473412296,
+        "suspicious_threshold": 30.0,
+        "anomaly_threshold": 72.0,
+        "suspicious_recall": 0.5040322580645161,
+        "anomaly_precision": 0.9625,
+        "macro_f1": 0.8008266370797624,
+        "anomaly_pr_auc": 0.9456743323257928,
+        "catboost_params": {
+          "depth": 8,
+          "learning_rate": 0.11539739510684971,
+          "iterations": 505,
+          "l2_leaf_reg": 4.15270156526897,
+          "random_strength": 0.8157556533116788,
+          "border_count": 128
+        },
+        "iforest_params": {
+          "n_estimators": 495,
+          "contamination": 0.15945707041371296,
+          "max_samples": "auto"
+        }
+      },
+      {
+        "trial": 1,
+        "objective": 0.7286608874058119,
+        "suspicious_threshold": 30.0,
+        "anomaly_threshold": 72.0,
+        "suspicious_recall": 0.4879032258064516,
+        "anomaly_precision": 0.9506172839506173,
+        "macro_f1": 0.7950265052150857,
+        "anomaly_pr_auc": 0.9456973302557687,
+        "catboost_params": {
+          "depth": 4,
+          "learning_rate": 0.07547102057148602,
+          "iterations": 620,
+          "l2_leaf_reg": 7.010185439379677,
+          "random_strength": 1.5342096639306007,
+          "border_count": 160
+        },
+        "iforest_params": {
+          "n_estimators": 359,
+          "contamination": 0.17939374933836,
+          "max_samples": "auto"
+        }
+      },
+      {
+        "trial": 0,
+        "objective": 0.7265650638930996,
+        "suspicious_threshold": 30.0,
+        "anomaly_threshold": 72.0,
+        "suspicious_recall": 0.4838709677419355,
+        "anomaly_precision": 0.9506172839506173,
+        "macro_f1": 0.7949787159207519,
+        "anomaly_pr_auc": 0.9490521167515775,
+        "catboost_params": {
+          "depth": 6,
+          "learning_rate": 0.06,
+          "iterations": 450,
+          "l2_leaf_reg": 3.0,
+          "random_strength": 1.0,
+          "border_count": 254
+        },
+        "iforest_params": {
+          "n_estimators": 320,
+          "contamination": 0.1,
+          "max_samples": "auto"
+        }
+      }
+    ]
+  },
+  "iforest_scale": {
+    "min": -0.11601226700453615,
+    "max": 0.27746107538647474
+  },
+  "split_timestamp_utc": "2026-03-30T08:00:00Z",
+  "metrics": {
+    "catboost_accuracy": 0.8601468624833111,
+    "ensemble_accuracy": 0.8871829105473965,
+    "ensemble_f1_macro": 0.7712111311015115,
+    "ensemble_suspicious_recall": 0.43209876543209874,
+    "ensemble_suspicious_precision": 0.7806691449814126,
+    "ensemble_anomaly_recall": 0.7291666666666666,
+    "ensemble_anomaly_precision": 0.9210526315789473,
+    "ensemble_anomaly_pr_auc": 0.9100284491846617,
+    "catboost_anomaly_pr_auc": 0.9013009063439098,
+    "ensemble_confusion_matrix": [
+      [
+        2308,
+        10,
+        0
+      ],
+      [
+        264,
+        210,
+        12
+      ],
+      [
+        3,
+        49,
+        140
+      ]
+    ],
+    "ensemble_classification_report": {
+      "normal": {
+        "precision": 0.8963106796116505,
+        "recall": 0.9956859361518551,
+        "f1-score": 0.9433885142039649,
+        "support": 2318.0
+      },
+      "suspicious": {
+        "precision": 0.7806691449814126,
+        "recall": 0.43209876543209874,
+        "f1-score": 0.5562913907284768,
+        "support": 486.0
+      },
+      "anomaly": {
+        "precision": 0.9210526315789473,
+        "recall": 0.7291666666666666,
+        "f1-score": 0.813953488372093,
+        "support": 192.0
+      },
+      "accuracy": 0.8871829105473965,
+      "macro avg": {
+        "precision": 0.8660108187240034,
+        "recall": 0.7189837894168735,
+        "f1-score": 0.7712111311015115,
+        "support": 2996.0
+      },
+      "weighted avg": {
+        "precision": 0.8791373381388286,
+        "recall": 0.8871829105473965,
+        "f1-score": 0.8723001540675139,
+        "support": 2996.0
+      }
+    }
+  }
+}

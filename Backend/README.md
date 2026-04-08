@@ -59,4 +59,11 @@ Health check:
 ### Notes
 
 - DB schema and default seed data are created automatically on startup (`init_db()`).
-- Every create/update action is stored in `operation_logs`.
+- Create/update and key read/list access events are stored in `operation_logs`.
+- ML scoring integration endpoints are available for admin users:
+	- `POST /api/dashboard/security/refresh`
+	- `GET /api/dashboard/security/alerts`
+	- `GET /api/dashboard/security/summary`
+- Configure remote ML service URL with:
+	- `ML_SERVICE_URL` (default `http://127.0.0.1:8100`)
+	- `ML_SERVICE_TIMEOUT` (default `10` seconds)
